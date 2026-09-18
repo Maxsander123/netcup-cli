@@ -654,7 +654,7 @@ def rack_info(name, as_json):
     occupied: dict[int, str] = {}
     for d in devices:
         pos    = d.get("position")
-        uheigh = int((_nested(d.get("device_type"), "u_height") or "1") or 1)
+        uheigh = int((d.get("device_type") or {}).get("u_height") or 1)
         if pos is None:
             continue
         dev_name = d.get("name") or f"device-{d['id']}"
