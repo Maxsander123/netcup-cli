@@ -10,7 +10,7 @@ python3 -m venv "$VENV_DIR"
 
 echo "[+] Installing dependencies ..."
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
-"$VENV_DIR/bin/pip" install --quiet click rich requests
+"$VENV_DIR/bin/pip" install --quiet click rich requests cryptography
 
 echo "[+] Copying script ..."
 cp "$SCRIPT_SRC" "$VENV_DIR/netbox-cli.py"

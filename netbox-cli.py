@@ -37,12 +37,43 @@ console = Console()
 # Auth helpers
 # ---------------------------------------------------------------------------
 
+def _derive_key() -> bytes:
+    """Derive a Fernet key from machine-specific entropy (never stored on disk)."""
+    import base64
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    machine_id = ""
+    for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        try:
+            machine_id = Path(path).read_text().strip()
+            break
+        except OSError:
+            pass
+    if not machine_id:
+        import socket
+        machine_id = socket.gethostname()
+
+    username = os.environ.get("USER") or os.environ.get("LOGNAME") or "user"
+    password = f"{machine_id}:{username}".encode()
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"netbox-cli-netcup-v1",
+        iterations=100_000,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(password))
+
+
 def _save_creds(data: dict) -> None:
+    from cryptography.fernet import Fernet
+    encrypted = Fernet(_derive_key()).encrypt(json.dumps(data).encode())
     CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     tmp = CREDS_FILE.with_suffix(".tmp")
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        os.write(fd, json.dumps(data, indent=2).encode())
+        os.write(fd, encrypted)
     finally:
         os.close(fd)
     tmp.replace(CREDS_FILE)
@@ -53,8 +84,21 @@ def _load_creds() -> dict:
         console.print("[red]Nicht eingeloggt.[/red] Führe aus: netbox-cli login")
         sys.exit(1)
     try:
-        return json.loads(CREDS_FILE.read_text())
-    except (json.JSONDecodeError, OSError) as exc:
+        from cryptography.fernet import Fernet, InvalidToken
+        raw = CREDS_FILE.read_bytes()
+        try:
+            return json.loads(Fernet(_derive_key()).decrypt(raw))
+        except InvalidToken:
+            # Migration: Datei war noch unverschlüsselt → einmalig neu speichern
+            try:
+                data = json.loads(raw)
+                _save_creds(data)
+                return data
+            except (json.JSONDecodeError, ValueError):
+                pass
+        console.print("[red]Credentials beschädigt oder von anderer Maschine.[/red] Neu einloggen: netbox-cli login")
+        sys.exit(1)
+    except OSError as exc:
         console.print(f"[red]Konfigurationsfehler:[/red] {exc}")
         sys.exit(1)
 
