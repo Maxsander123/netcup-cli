@@ -141,23 +141,6 @@ netbox-cli netcup snapshot delete <name> <snap_id> [--force]
 netbox-cli netcup snapshot restore <name> <snap_id> [--force]
 ```
 
-### NetBox-Integration
-```bash
-# Netcup VPS als VM in NetBox registrieren
-netbox-cli netcup register <name>
-
-# Live-Zustand (Status, IP, Interfaces) mit NetBox abgleichen
-netbox-cli netcup sync
-netbox-cli netcup sync --dry-run
-netbox-cli netcup sync --sync-ip --sync-interfaces
-
-# VM aus NetBox entfernen
-netbox-cli netcup deregister <name>
-```
-
-`register` legt die VM in NetBox an, erstellt Interfaces mit MACs, setzt die primäre IP und schreibt die Tracking-Felder `vendor`, `janus_id`, `cpu_type` (werden automatisch als Custom Fields angelegt).  
-`sync` gleicht nur VMs ab, die via `register` erfasst wurden (erkennbar an `vendor=netcup`).
-
 ---
 
 ## Shell-Completion
