@@ -1,6 +1,6 @@
 # netbox-cli
 
-Standalone CLI zum Verwalten von **NetBox** (DCIM/IPAM/Virtualisierung) und **Netcup VPS** – direkt aus dem Terminal.
+Standalone CLI zum Verwalten von **NetBox** (DCIM/IPAM/Virtualisierung) – mit integrierter **Netcup VPS**-Verwaltung.
 
 ---
 
