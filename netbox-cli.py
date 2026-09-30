@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
+import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -1097,7 +1100,7 @@ def ip_info(address):
 
 
 @grp_ip.command("create")
-@click.argument("address", metavar="ADDRESS", help="IP address with prefix length (e.g. 10.0.0.5/24)")
+@click.argument("address", metavar="ADDRESS")
 @click.option("--dns-name",    default="", help="DNS name")
 @click.option("--description", default="", help="Description")
 @click.option("--status",      default="active", show_default=True,
@@ -1420,6 +1423,888 @@ def completion_fish():
     """Print fish completion setup instructions."""
     console.print("Add this line to your [bold]~/.config/fish/config.fish[/bold]:")
     console.print("  eval (env _NETBOX_CLI_COMPLETE=fish_source netbox-cli)")
+
+
+# ===========================================================================
+# Netcup — embedded client + commands
+# ===========================================================================
+
+_NC_CREDS_FILE  = CONFIG_DIR / "netcup.json"
+_NC_AUTH_BASE   = "https://www.servercontrolpanel.de/realms/scp/protocol/openid-connect"
+_NC_DEVICE_EP   = f"{_NC_AUTH_BASE}/auth/device"
+_NC_TOKEN_EP    = f"{_NC_AUTH_BASE}/token"
+_NC_CLIENT_ID   = "scp"
+_NC_API_BASE    = "https://www.servercontrolpanel.de/scp-core/api/v1"
+
+_NC_STATE_MAP: dict[str, str] = {
+    "RUNNING": "running", "STOPPED": "stopped", "SHUTOFF": "stopped",
+    "PAUSED": "stopped", "BUILDING": "deploying",
+}
+
+
+def _nc_save_creds(data: dict) -> None:
+    CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    tmp = _NC_CREDS_FILE.with_suffix(".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, json.dumps(data, indent=2).encode())
+    finally:
+        os.close(fd)
+    tmp.replace(_NC_CREDS_FILE)
+
+
+def _nc_load_creds() -> dict:
+    if not _NC_CREDS_FILE.exists():
+        console.print("[red]Netcup not logged in.[/red] Run: netbox-cli netcup login")
+        sys.exit(1)
+    try:
+        return json.loads(_NC_CREDS_FILE.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        console.print(f"[red]Netcup config error:[/red] {exc}")
+        sys.exit(1)
+
+
+def _nc_access_token() -> str:
+    """Return a valid access token, refreshing silently if needed."""
+    creds = _nc_load_creds()
+    if creds.get("access_token") and creds.get("access_token_expires_at", 0) > time.time() + 30:
+        return creds["access_token"]
+    resp = requests.post(
+        _NC_TOKEN_EP,
+        data={
+            "client_id":    _NC_CLIENT_ID,
+            "grant_type":   "refresh_token",
+            "refresh_token": creds["refresh_token"],
+        },
+        timeout=15,
+    )
+    if not resp.ok:
+        try:
+            msg = resp.json().get("error_description", str(resp.status_code))
+        except Exception:
+            msg = str(resp.status_code)
+        console.print(f"[red]Netcup token refresh failed:[/red] {msg}")
+        console.print("Run: [bold]netbox-cli netcup login[/bold]")
+        sys.exit(1)
+    tok = resp.json()
+    creds["access_token"] = tok["access_token"]
+    creds["access_token_expires_at"] = time.time() + tok.get("expires_in", 300)
+    if "refresh_token" in tok:
+        creds["refresh_token"] = tok["refresh_token"]
+    _nc_save_creds(creds)
+    return tok["access_token"]
+
+
+def _nc_hdrs(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+
+def _nc_primary_ipv4(detail: dict) -> str:
+    addrs = detail.get("ipv4Addresses") or []
+    return addrs[0]["ip"] if addrs else "—"
+
+
+def _nc_public_ipv6(detail: dict) -> str | None:
+    live   = detail.get("serverLiveInfo") or {}
+    ifaces = live.get("interfaces") or []
+    primary = next((i for i in ifaces if not i.get("vlanInterface")), None)
+    if not primary:
+        return None
+    prefixes = primary.get("ipv6NetworkPrefixes") or []
+    mac = primary.get("mac")
+    if not prefixes or not mac:
+        return None
+    prefix = prefixes[0].split("/")[0].rstrip(":")
+    parts  = mac.split(":")
+    parts.insert(3, "ff")
+    parts.insert(4, "fe")
+    parts[0] = format(int(parts[0], 16) ^ 0x02, "02x")
+    eui64   = "".join(parts[i] + parts[i + 1] for i in range(0, 8, 2))
+    groups  = ":".join(eui64[i:i + 4] for i in range(0, 16, 4))
+    return f"{prefix}:{groups}"
+
+
+def _nc_state(detail: dict) -> str:
+    raw = (detail.get("serverLiveInfo") or {}).get("state", "")
+    return _NC_STATE_MAP.get(raw.upper(), raw.lower() or "—")
+
+
+def _nc_location(detail: dict) -> str:
+    return (detail.get("site") or {}).get("city", "—") or "—"
+
+
+def _nc_vlan_names(token: str) -> dict[int, str]:
+    try:
+        r = requests.get(f"{_NC_API_BASE}/cloudvlans", headers=_nc_hdrs(token), timeout=10)
+        if r.ok:
+            items = r.json()
+            if isinstance(items, list):
+                return {v["id"]: v.get("name") or str(v["id"]) for v in items if v.get("id")}
+    except Exception:
+        pass
+    return {}
+
+
+def _nc_get_detail(server_id, token: str) -> dict:
+    r = requests.get(f"{_NC_API_BASE}/servers/{server_id}", headers=_nc_hdrs(token), timeout=15)
+    r.raise_for_status()
+    return r.json()
+
+
+def _nc_fetch_servers() -> list[dict]:
+    """Return list of server dicts each with a 'detail' key added."""
+    token   = _nc_access_token()
+    r = requests.get(f"{_NC_API_BASE}/servers", headers=_nc_hdrs(token), timeout=15)
+    r.raise_for_status()
+    data    = r.json()
+    servers = data if isinstance(data, list) else data.get("data", [])
+    vlan_names = _nc_vlan_names(token)
+
+    details: dict = {}
+    with ThreadPoolExecutor(max_workers=min(len(servers) or 1, 8)) as pool:
+        future_map = {pool.submit(_nc_get_detail, s["id"], token): s["id"] for s in servers}
+        for fut in as_completed(future_map):
+            sid = future_map[fut]
+            try:
+                details[sid] = fut.result()
+            except Exception:
+                details[sid] = {}
+
+    out = []
+    for s in servers:
+        sid    = s.get("id")
+        detail = details.get(sid, {})
+        live   = detail.get("serverLiveInfo") or {}
+        ifaces = live.get("interfaces") or []
+        primary_iface = next((i for i in ifaces if not i.get("vlanInterface")), {})
+        disks  = live.get("disks") or []
+        disk_mib = sum(d.get("capacityInMiB", 0) for d in disks)
+        ipv6_prefixes = primary_iface.get("ipv6NetworkPrefixes") or []
+
+        eth_idx  = 0
+        networks = []
+        for iface in ifaces:
+            mac = iface.get("mac")
+            if not mac:
+                continue
+            vlan_id = iface.get("vlanId")
+            if iface.get("vlanInterface") and vlan_id:
+                label = vlan_names.get(vlan_id) or f"vlan{vlan_id}"
+            else:
+                label = f"eth{eth_idx}"
+                eth_idx += 1
+            networks.append({
+                "port": label, "mac": mac,
+                "ip": next(
+                    (a.get("ip") for a in (iface.get("ipAddresses") or [])
+                     if a.get("type") == "public" and "." in (a.get("ip") or "")),
+                    None,
+                ),
+            })
+
+        vlan_ifaces = [i for i in ifaces if i.get("vlanInterface")]
+        vlans = [
+            {
+                "nic": vi.get("mac") or "",
+                "mac": vi.get("mac") or "",
+                "vlan": vlan_names.get(vi.get("vlanId")) if vi.get("vlanId") else vi.get("vlanId"),
+            }
+            for vi in vlan_ifaces
+        ]
+
+        hostname = s.get("hostname", "—")
+        nickname = s.get("nickname") or ""
+        out.append({
+            "id":       str(sid),
+            "name":     nickname if nickname and nickname != hostname else hostname,
+            "hostname": hostname,
+            "nickname": nickname or None,
+            "status":   _nc_state(detail),
+            "ip":       _nc_primary_ipv4(detail),
+            "location": _nc_location(detail),
+            "template": (s.get("template") or {}).get("name"),
+            "arch":     detail.get("architecture"),
+            "mac":      primary_iface.get("mac"),
+            "networks": networks or None,
+            "ipv6":     _nc_public_ipv6(detail),
+            "ipv6_prefix": ipv6_prefixes[0] if ipv6_prefixes else None,
+            "vcpus":    live.get("cpuCount"),
+            "memory_mb": live.get("currentServerMemoryInMiB"),
+            "disk_gb":  round(disk_mib / 1024) if disk_mib else None,
+            "rx_month_gb": round(primary_iface.get("rxMonthlyInMiB", 0) / 1024, 1),
+            "tx_month_gb": round(primary_iface.get("txMonthlyInMiB", 0) / 1024, 1),
+            "vlans":    vlans or None,
+            "_detail":  detail,
+        })
+    return out
+
+
+def _nc_resolve(name: str) -> dict:
+    servers = _nc_fetch_servers()
+    matches = [
+        s for s in servers
+        if s["id"] == name or s["name"] == name or s.get("hostname") == name
+    ]
+    if not matches:
+        console.print(f"[red]Netcup server not found:[/red] {name}")
+        sys.exit(1)
+    return matches[0]
+
+
+def _nc_find_server_id(name: str) -> str:
+    token   = _nc_access_token()
+    r = requests.get(f"{_NC_API_BASE}/servers", headers=_nc_hdrs(token), timeout=15)
+    r.raise_for_status()
+    data    = r.json()
+    servers = data if isinstance(data, list) else data.get("data", [])
+    matches = [
+        s for s in servers
+        if str(s.get("id")) == name or s.get("hostname") == name or (s.get("nickname") or "") == name
+    ]
+    if not matches:
+        console.print(f"[red]Netcup server not found:[/red] {name}")
+        sys.exit(1)
+    if len(matches) > 1:
+        lines = "\n".join(f"  {s['id']}  {s.get('nickname') or s.get('hostname')}" for s in matches)
+        console.print(f"[red]Ambiguous name '{name}':[/red]\n{lines}")
+        sys.exit(1)
+    return str(matches[0]["id"])
+
+
+def _nc_power_action(server: dict, action: str) -> None:
+    token = _nc_access_token()
+    r = requests.post(
+        f"{_NC_API_BASE}/servers/{server['id']}/{action}",
+        headers={**_nc_hdrs(token), "Content-Type": "application/json"},
+        json={},
+        timeout=30,
+    )
+    if not r.ok:
+        console.print(f"[red]Netcup API {r.status_code}:[/red] {r.text[:200]}")
+        sys.exit(1)
+
+
+# ── netcup command group ──────────────────────────────────────────────────────
+
+@cli.group("netcup")
+def grp_netcup():
+    """Manage Netcup VPS servers."""
+
+
+@grp_netcup.command("login")
+def netcup_login():
+    """Login to Netcup SCP via browser (OAuth2 Device Code flow — persistent)."""
+    resp = requests.post(
+        _NC_DEVICE_EP,
+        data={"client_id": _NC_CLIENT_ID, "scope": "offline_access"},
+        timeout=15,
+    )
+    if not resp.ok:
+        console.print(f"[red]Login failed:[/red] {resp.text}")
+        sys.exit(1)
+    data        = resp.json()
+    uri         = data.get("verification_uri_complete") or data.get("verification_uri")
+    device_code = data["device_code"]
+    interval    = data.get("interval", 5)
+
+    console.print(f"\n[bold yellow]Öffne diese URL im Browser:[/bold yellow]\n  {uri}\n")
+    if "verification_uri_complete" not in data:
+        console.print(f"  Code: [bold]{data.get('user_code')}[/bold]\n")
+
+    webbrowser.open(uri)
+
+    sys.stdout.write("Warte auf Browser-Authentifizierung")
+    sys.stdout.flush()
+    while True:
+        time.sleep(interval)
+        r = requests.post(
+            _NC_TOKEN_EP,
+            data={
+                "client_id":   _NC_CLIENT_ID,
+                "grant_type":  "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code": device_code,
+            },
+            timeout=15,
+        )
+        tok = r.json()
+        if r.ok:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            _nc_save_creds({"refresh_token": tok["refresh_token"]})
+            console.print("[green]✓[/green] Erfolgreich eingeloggt. Credentials persistent gespeichert.")
+            return
+        err = tok.get("error", "")
+        if err == "authorization_pending":
+            sys.stdout.write(".")
+            sys.stdout.flush()
+        elif err == "slow_down":
+            interval += 5
+        else:
+            sys.stdout.write("\n")
+            console.print(f"[red]Auth-Fehler:[/red] {tok}")
+            sys.exit(1)
+
+
+@grp_netcup.command("logout")
+def netcup_logout():
+    """Remove saved Netcup credentials."""
+    if _NC_CREDS_FILE.exists():
+        _NC_CREDS_FILE.unlink()
+        console.print("[green]✓[/green] Netcup logged out.")
+    else:
+        console.print("Netcup not logged in.")
+
+
+@grp_netcup.command("list")
+@click.option("--format", "-f", "fmt", type=click.Choice(["table", "json", "csv"]), default="table", show_default=True)
+def netcup_list(fmt: str):
+    """List Netcup VPS servers."""
+    servers = _nc_fetch_servers()
+
+    if fmt == "json":
+        click.echo(json.dumps([{k: v for k, v in s.items() if k != "_detail"} for s in servers], indent=2))
+        return
+
+    if fmt == "csv":
+        click.echo("id,name,hostname,status,ip,location")
+        for s in servers:
+            click.echo(f"{s['id']},{s['name']},{s.get('hostname','—')},{s['status']},{s['ip']},{s['location']}")
+        return
+
+    table = Table(box=box.ROUNDED)
+    table.add_column("ID");      table.add_column("Name", style="bold")
+    table.add_column("Hostname"); table.add_column("Status"); table.add_column("IP"); table.add_column("Location")
+    for s in servers:
+        table.add_row(s["id"], s["name"], s.get("hostname") or "—", s["status"], s["ip"], s["location"])
+    console.print(table)
+    console.print(f"[dim]{len(servers)} server(s)[/dim]")
+
+
+@grp_netcup.command("info")
+@click.argument("name")
+@click.option("--raw", is_flag=True, help="Dump raw API JSON.")
+def netcup_info(name: str, raw: bool):
+    """Show details for a Netcup VPS."""
+    if raw:
+        token     = _nc_access_token()
+        server_id = _nc_find_server_id(name)
+        detail    = _nc_get_detail(server_id, token)
+        click.echo(json.dumps(detail, indent=2))
+        return
+    s     = _nc_resolve(name)
+    t, rw = _detail_table()
+    rw("ID",          s["id"])
+    rw("Name",        s["name"])
+    rw("Hostname",    s.get("hostname"))
+    rw("Status",      s["status"])
+    rw("IP",          s["ip"])
+    rw("Location",    s["location"])
+    rw("IPv6",        s.get("ipv6") or "—")
+    rw("Template",    s.get("template") or "—")
+    rw("Arch",        s.get("arch") or "—")
+    rw("vCPUs",       s.get("vcpus"))
+    mem = s.get("memory_mb")
+    rw("RAM",         f"{mem // 1024}G ({mem} MB)" if mem else "—")
+    rw("Disk",        f"{s.get('disk_gb')}G" if s.get("disk_gb") else "—")
+    rw("MAC",         s.get("mac") or "—")
+    rw("RX/month",    f"{s.get('rx_month_gb', 0)} GB")
+    rw("TX/month",    f"{s.get('tx_month_gb', 0)} GB")
+    console.print(t)
+
+
+@grp_netcup.command("start")
+@click.argument("name")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation.")
+def netcup_start(name: str, force: bool):
+    """Start a Netcup VPS."""
+    s = _nc_resolve(name)
+    if not force:
+        click.confirm(f"Start '{s['name']}' ({s['status']}, {s['ip']})?", abort=True)
+    _nc_power_action(s, "start")
+    console.print(f"[green]✓[/green] {s['name']} start gesendet.")
+
+
+@grp_netcup.command("stop")
+@click.argument("name")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation.")
+def netcup_stop(name: str, force: bool):
+    """Stop a Netcup VPS."""
+    s = _nc_resolve(name)
+    if not force:
+        click.confirm(f"Stop '{s['name']}' ({s['status']}, {s['ip']})?", abort=True)
+    _nc_power_action(s, "stop")
+    console.print(f"[green]✓[/green] {s['name']} stop gesendet.")
+
+
+@grp_netcup.command("reset")
+@click.argument("name")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation.")
+def netcup_reset(name: str, force: bool):
+    """Hard-reset (reboot) a Netcup VPS."""
+    s = _nc_resolve(name)
+    if not force:
+        click.confirm(f"Hard-reset '{s['name']}' ({s['status']}, {s['ip']})?", abort=True)
+    _nc_power_action(s, "reboot")
+    console.print(f"[green]✓[/green] {s['name']} reset gesendet.")
+
+
+@grp_netcup.command("traffic")
+@click.argument("name", required=False, default=None)
+@click.option("--format", "-f", "fmt", type=click.Choice(["table", "json", "csv"]), default="table", show_default=True)
+def netcup_traffic(name: str | None, fmt: str):
+    """Show monthly traffic usage. Without NAME shows all servers."""
+    servers = _nc_fetch_servers()
+    if name:
+        servers = [s for s in servers if s["id"] == name or s["name"] == name or s.get("hostname") == name]
+        if not servers:
+            console.print(f"[red]Server not found:[/red] {name}")
+            sys.exit(1)
+
+    rows = [
+        {"name": s["name"], "rx_gb": s.get("rx_month_gb", 0),
+         "tx_gb": s.get("tx_month_gb", 0),
+         "total_gb": round((s.get("rx_month_gb") or 0) + (s.get("tx_month_gb") or 0), 1)}
+        for s in servers
+    ]
+
+    if fmt == "json":
+        click.echo(json.dumps(rows, indent=2))
+        return
+    if fmt == "csv":
+        click.echo("name,rx_gb,tx_gb,total_gb")
+        for row in rows:
+            click.echo(f"{row['name']},{row['rx_gb']},{row['tx_gb']},{row['total_gb']}")
+        return
+
+    table = Table(box=box.ROUNDED, title="Monthly Traffic")
+    table.add_column("Name", style="bold")
+    table.add_column("RX GB",    justify="right")
+    table.add_column("TX GB",    justify="right")
+    table.add_column("Total GB", justify="right", style="bold cyan")
+    for row in rows:
+        table.add_row(row["name"], str(row["rx_gb"]), str(row["tx_gb"]), str(row["total_gb"]))
+    console.print(table)
+
+
+# ── netcup snapshot subgroup ──────────────────────────────────────────────────
+
+@grp_netcup.group("snapshot")
+def netcup_snapshot():
+    """Manage Netcup VPS snapshots."""
+
+
+@netcup_snapshot.command("list")
+@click.argument("name")
+def nc_snapshot_list(name: str):
+    """List snapshots for a Netcup server."""
+    token     = _nc_access_token()
+    server_id = _nc_find_server_id(name)
+    r = requests.get(f"{_NC_API_BASE}/servers/{server_id}/snapshots", headers=_nc_hdrs(token), timeout=15)
+    if not r.ok:
+        console.print(f"[red]Netcup API {r.status_code}:[/red] {r.text[:200]}")
+        sys.exit(1)
+    data  = r.json()
+    snaps = data if isinstance(data, list) else data.get("data", [])
+    if not snaps:
+        console.print("No snapshots found.")
+        return
+    table = Table(title=f"Snapshots — {name}", box=box.ROUNDED)
+    table.add_column("ID",      style="bold cyan", no_wrap=True)
+    table.add_column("Name",    style="bold")
+    table.add_column("Created", style="dim")
+    table.add_column("Size",    justify="right")
+    for s in snaps:
+        raw_size = s.get("sizeInMiB") or s.get("size")
+        table.add_row(
+            str(s.get("id", "—")),
+            s.get("name") or "—",
+            s.get("createdAt") or s.get("created") or "—",
+            f"{raw_size} MiB" if raw_size is not None else "—",
+        )
+    console.print(table)
+
+
+@netcup_snapshot.command("create")
+@click.argument("name")
+@click.option("--snap-name", default=None, help="Name for the new snapshot (prompted if omitted).")
+@click.option("--description", "-d", default="", help="Optional description.")
+def nc_snapshot_create(name: str, snap_name: str | None, description: str):
+    """Create a snapshot for a Netcup server."""
+    token     = _nc_access_token()
+    server_id = _nc_find_server_id(name)
+    if not snap_name:
+        snap_name = click.prompt("Snapshot name")
+    body: dict = {"name": snap_name}
+    if description:
+        body["description"] = description
+    r = requests.post(
+        f"{_NC_API_BASE}/servers/{server_id}/snapshots",
+        headers={**_nc_hdrs(token), "Content-Type": "application/json"},
+        json=body,
+        timeout=60,
+    )
+    if not r.ok:
+        console.print(f"[red]Netcup API {r.status_code}:[/red] {r.text[:200]}")
+        sys.exit(1)
+    result  = r.json() if r.content else {}
+    snap_id = result.get("id", "?")
+    console.print(f"[green]✓[/green] Snapshot '{snap_name}' erstellt (id={snap_id}).")
+
+
+@netcup_snapshot.command("delete")
+@click.argument("name")
+@click.argument("snap_id")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation.")
+def nc_snapshot_delete(name: str, snap_id: str, force: bool):
+    """Delete a snapshot from a Netcup server."""
+    token     = _nc_access_token()
+    server_id = _nc_find_server_id(name)
+    if not force:
+        click.confirm(f"Snapshot {snap_id} von '{name}' löschen? Kann nicht rückgängig gemacht werden.", abort=True)
+    r = requests.delete(
+        f"{_NC_API_BASE}/servers/{server_id}/snapshots/{snap_id}",
+        headers=_nc_hdrs(token),
+        timeout=30,
+    )
+    if not r.ok:
+        console.print(f"[red]Netcup API {r.status_code}:[/red] {r.text[:200]}")
+        sys.exit(1)
+    console.print(f"[green]✓[/green] Snapshot {snap_id} gelöscht.")
+
+
+@netcup_snapshot.command("restore")
+@click.argument("name")
+@click.argument("snap_id")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation.")
+def nc_snapshot_restore(name: str, snap_id: str, force: bool):
+    """Restore a Netcup server from a snapshot.
+
+    WARNING: Overwrites the current disk — all data since the snapshot is lost.
+    """
+    token     = _nc_access_token()
+    server_id = _nc_find_server_id(name)
+    console.print(
+        "\n[bold red]WARNUNG:[/bold red] Restore überschreibt die aktuelle Disk.\n"
+        "Alle Daten nach dem Snapshot-Zeitpunkt gehen verloren.\n"
+    )
+    if not force:
+        click.confirm(f"Snapshot {snap_id} auf '{name}' wiederherstellen?", abort=True)
+    r = requests.post(
+        f"{_NC_API_BASE}/servers/{server_id}/snapshots/{snap_id}/restore",
+        headers={**_nc_hdrs(token), "Content-Type": "application/json"},
+        json={},
+        timeout=60,
+    )
+    if not r.ok:
+        console.print(f"[red]Netcup API {r.status_code}:[/red] {r.text[:200]}")
+        sys.exit(1)
+    console.print(f"[green]✓[/green] Snapshot {snap_id} auf '{name}' wiederhergestellt.")
+
+
+# ── netcup register / sync / deregister ───────────────────────────────────────
+
+_JANUS_FIELDS = [("vendor", "Vendor"), ("janus_id", "Janus ID"), ("cpu_type", "CPU Type")]
+
+
+def _nc_nb_ensure_custom_fields() -> None:
+    """Create janus tracking custom fields in NetBox if missing (best-effort)."""
+    cfg   = load_config()
+    base  = cfg["url"]
+    hdrs  = _headers()
+    names = ",".join(n for n, _ in _JANUS_FIELDS)
+    try:
+        existing = api_get("/api/extras/custom-fields/", params={"name__in": names, "limit": 20})
+        existing_names = {cf["name"] for cf in existing.get("results", [])}
+        for field_name, label in _JANUS_FIELDS:
+            if field_name not in existing_names:
+                requests.post(
+                    base + "/api/extras/custom-fields/",
+                    headers=hdrs,
+                    json={
+                        "name":         field_name,
+                        "label":        label,
+                        "type":         "text",
+                        "object_types": ["dcim.device", "virtualization.virtualmachine"],
+                        "required":     False,
+                    },
+                    verify=False,
+                    timeout=20,
+                )
+    except Exception:
+        pass
+
+
+def _nc_nb_tag(endpoint: str, service: str, resource_id: str, arch: str | None) -> None:
+    """Write vendor/janus_id/cpu_type custom fields. Creates fields if missing."""
+    cf: dict = {"vendor": service, "janus_id": resource_id}
+    if arch:
+        cf["cpu_type"] = arch
+    r = requests.patch(
+        load_config()["url"] + endpoint,
+        headers=_headers(),
+        json={"custom_fields": cf},
+        verify=False,
+        timeout=20,
+    )
+    if r.ok:
+        return
+    if r.status_code == 400 and "does not exist" in r.text:
+        _nc_nb_ensure_custom_fields()
+        requests.patch(
+            load_config()["url"] + endpoint,
+            headers=_headers(),
+            json={"custom_fields": cf},
+            verify=False,
+            timeout=20,
+        )
+
+
+def _nc_nb_get_or_create_cluster() -> int:
+    clusters = api_get_all("/api/virtualization/clusters/")
+    if clusters:
+        if len(clusters) == 1:
+            console.print(f"  Cluster: {clusters[0]['name']} (auto-gewählt)")
+            return clusters[0]["id"]
+        console.print("\nVerfügbare Cluster:")
+        for i, c in enumerate(clusters, 1):
+            console.print(f"  {i:2}. {c['name']}")
+        while True:
+            raw = click.prompt("Cluster").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(clusters):
+                    return clusters[idx]["id"]
+            for c in clusters:
+                if c["name"].lower() == raw.lower():
+                    return c["id"]
+            console.print(f"  Bitte 1–{len(clusters)} oder exakter Name.")
+    console.print("\nKein Cluster gefunden — erstelle einen.")
+    cname = click.prompt("Cluster-Name", default="Default")
+    ctypes = api_get_all("/api/virtualization/cluster-types/")
+    if ctypes:
+        ctype_id = ctypes[0]["id"]
+    else:
+        ct_name = click.prompt("Cluster-Typ", default="Generic")
+        ct = api_post("/api/virtualization/cluster-types/",
+                      {"name": ct_name, "slug": ct_name.lower().replace(" ", "-")})
+        ctype_id = ct["id"]
+    cluster = api_post("/api/virtualization/clusters/", {"name": cname, "type": ctype_id})
+    console.print(f"  Cluster '{cname}' erstellt (id={cluster['id']})")
+    return cluster["id"]
+
+
+@grp_netcup.command("register")
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, help="Skip all confirmations.")
+def netcup_register(name: str, yes: bool):
+    """Register a Netcup VPS in NetBox as a virtual machine.
+
+    Creates the VM, interfaces, IP addresses, and tracking custom fields.
+    Prompts interactively for cluster if more than one exists.
+    """
+    load_config()  # ensure netbox is configured
+    s = _nc_resolve(name)
+
+    # Check if already registered
+    existing = api_get_all("/api/virtualization/virtual-machines/", {"name": s["name"]})
+    if existing:
+        console.print(f"[yellow]VM '{s['name']}' already exists in NetBox (id={existing[0]['id']}).[/yellow]")
+        if not yes and not click.confirm("Update tracking fields and continue?"):
+            return
+        vm_id = existing[0]["id"]
+    else:
+        cluster_id = _nc_nb_get_or_create_cluster()
+        _nc_nb_ensure_custom_fields()
+
+        body: dict = {
+            "name":    s["name"],
+            "cluster": cluster_id,
+            "status":  "active" if s["status"] == "running" else "offline",
+        }
+        if s.get("vcpus"):    body["vcpus"]  = s["vcpus"]
+        if s.get("memory_mb"): body["memory"] = s["memory_mb"]
+        if s.get("disk_gb"):  body["disk"]   = s["disk_gb"]
+
+        vm = api_post("/api/virtualization/virtual-machines/", body)
+        vm_id = vm["id"]
+        console.print(f"[green]✓[/green] VM '{s['name']}' in NetBox erstellt (id={vm_id}).")
+
+    # Tag tracking fields
+    _nc_nb_tag(f"/api/virtualization/virtual-machines/{vm_id}/", "netcup", s["id"], s.get("arch"))
+
+    # Create interfaces
+    networks = s.get("networks") or []
+    primary_iface_id = None
+    for iface in networks:
+        mac   = (iface.get("mac") or "").upper()
+        pname = iface.get("port") or "eth0"
+        if not mac:
+            continue
+        existing_ifaces = api_get_all("/api/virtualization/interfaces/",
+                                      {"virtual_machine_id": vm_id, "name": pname})
+        if existing_ifaces:
+            iface_id = existing_ifaces[0]["id"]
+        else:
+            iface_obj = api_post("/api/virtualization/interfaces/",
+                                 {"virtual_machine": vm_id, "name": pname, "mac_address": mac})
+            iface_id = iface_obj["id"]
+            console.print(f"  Interface {pname} ({mac}) erstellt.")
+        if primary_iface_id is None:
+            primary_iface_id = iface_id
+
+        # Assign IP if available
+        iface_ip = iface.get("ip")
+        if iface_ip and primary_iface_id == iface_id:
+            addr = f"{iface_ip}/32"
+            existing_ips = api_get_all("/api/ipam/ip-addresses/", {"address": iface_ip})
+            if existing_ips:
+                ip_id = existing_ips[0]["id"]
+            else:
+                ip_obj = api_post("/api/ipam/ip-addresses/", {
+                    "address": addr, "status": "active",
+                    "assigned_object_type": "virtualization.vminterface",
+                    "assigned_object_id":   iface_id,
+                })
+                ip_id = ip_obj["id"]
+                console.print(f"  IP {addr} erstellt.")
+            api_patch(f"/api/virtualization/virtual-machines/{vm_id}/", {"primary_ip4": ip_id})
+            console.print(f"  Primary IP gesetzt: {addr}")
+
+    console.print(f"[green]✓[/green] '{s['name']}' in NetBox registriert.")
+
+
+@grp_netcup.command("sync")
+@click.option("--dry-run", is_flag=True, help="Show changes without applying them.")
+@click.option("--sync-ip", is_flag=True, help="Also reconcile primary IP.")
+@click.option("--sync-interfaces", is_flag=True, help="Also reconcile interfaces.")
+def netcup_sync(dry_run: bool, sync_ip: bool, sync_interfaces: bool):
+    """Sync live Netcup VPS state to NetBox (status, IP, interfaces).
+
+    Only updates VMs that were registered via 'netcup register' and have
+    the janus_id tracking field set.
+    """
+    load_config()
+    _STATUS_MAP = {
+        "running": "active", "stopped": "offline", "deploying": "staged",
+    }
+
+    console.print("[dim]Fetching Netcup servers…[/dim]")
+    servers = _nc_fetch_servers()
+    by_id   = {s["id"]: s for s in servers}
+
+    console.print("[dim]Loading NetBox VMs…[/dim]")
+    vms = api_get_all("/api/virtualization/virtual-machines/")
+    nb_by_janus_id = {
+        (vm.get("custom_fields") or {}).get("janus_id"): vm
+        for vm in vms
+        if (vm.get("custom_fields") or {}).get("vendor") == "netcup"
+           and (vm.get("custom_fields") or {}).get("janus_id")
+    }
+
+    if not nb_by_janus_id:
+        console.print("[yellow]Keine via 'netcup register' erfassten VMs gefunden.[/yellow]")
+        console.print("Führe zuerst: netbox-cli netcup register <name>")
+        return
+
+    changed = 0
+    for janus_id, nb_vm in nb_by_janus_id.items():
+        live = by_id.get(janus_id)
+        if not live:
+            console.print(f"  [yellow]{nb_vm.get('name')}[/yellow]: nicht mehr bei Netcup vorhanden.")
+            continue
+
+        updates: dict = {}
+        nb_status = (nb_vm.get("status") or {}).get("value", "")
+        new_status = _STATUS_MAP.get(live["status"], "")
+        if new_status and nb_status != new_status:
+            updates["status"] = new_status
+
+        vm_name = live["name"]
+        if nb_vm.get("name") != vm_name:
+            updates["name"] = vm_name
+
+        if updates:
+            changed += 1
+            if dry_run:
+                console.print(f"  [cyan]{nb_vm.get('name')}[/cyan]: würde aktualisieren → {updates}")
+            else:
+                api_patch(f"/api/virtualization/virtual-machines/{nb_vm['id']}/", updates)
+                console.print(f"  [green]✓[/green] {vm_name}: {updates}")
+
+        if sync_ip and live.get("ip") and live["ip"] != "—":
+            raw = ((nb_vm.get("primary_ip4") or {}).get("address") or "").split("/")[0]
+            if raw != live["ip"]:
+                if dry_run:
+                    console.print(f"  [cyan]{vm_name}[/cyan]: IP {raw or '—'} → {live['ip']}")
+                else:
+                    addr = f"{live['ip']}/32"
+                    existing = api_get_all("/api/ipam/ip-addresses/", {"address": live["ip"]})
+                    if existing:
+                        ip_id = existing[0]["id"]
+                    else:
+                        ifaces = api_get_all("/api/virtualization/interfaces/",
+                                             {"virtual_machine_id": nb_vm["id"], "limit": 1})
+                        if ifaces:
+                            ip_obj = api_post("/api/ipam/ip-addresses/", {
+                                "address": addr, "status": "active",
+                                "assigned_object_type": "virtualization.vminterface",
+                                "assigned_object_id":   ifaces[0]["id"],
+                            })
+                            ip_id = ip_obj["id"]
+                        else:
+                            continue
+                    api_patch(f"/api/virtualization/virtual-machines/{nb_vm['id']}/", {"primary_ip4": ip_id})
+                    console.print(f"  [green]✓[/green] {vm_name}: IP → {live['ip']}")
+                changed += 1
+
+        if sync_interfaces and live.get("networks"):
+            for iface in live["networks"]:
+                mac   = (iface.get("mac") or "").upper()
+                pname = iface.get("port") or "eth0"
+                if not mac:
+                    continue
+                existing = api_get_all("/api/virtualization/interfaces/",
+                                       {"virtual_machine_id": nb_vm["id"], "name": pname})
+                if existing:
+                    nb_mac = (existing[0].get("mac_address") or "").upper()
+                    if nb_mac != mac:
+                        if dry_run:
+                            console.print(f"  [cyan]{vm_name}[/cyan]: {pname} MAC {nb_mac or '—'} → {mac}")
+                        else:
+                            api_patch(f"/api/virtualization/interfaces/{existing[0]['id']}/",
+                                      {"mac_address": mac})
+                            console.print(f"  [green]✓[/green] {vm_name}: {pname} MAC → {mac}")
+                        changed += 1
+                else:
+                    if dry_run:
+                        console.print(f"  [cyan]{vm_name}[/cyan]: {pname} ({mac}) erstellen")
+                    else:
+                        api_post("/api/virtualization/interfaces/",
+                                 {"virtual_machine": nb_vm["id"], "name": pname, "mac_address": mac})
+                        console.print(f"  [green]✓[/green] {vm_name}: Interface {pname} erstellt.")
+                    changed += 1
+
+    prefix = "[dim](dry-run)[/dim] " if dry_run else ""
+    console.print(f"\n{prefix}Sync abgeschlossen. {changed} Änderung(en).")
+
+
+@grp_netcup.command("deregister")
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation.")
+def netcup_deregister(name: str, yes: bool):
+    """Remove a Netcup VPS from NetBox (deletes the VM record)."""
+    load_config()
+    vms = api_get_all("/api/virtualization/virtual-machines/", {"name": name})
+    if not vms:
+        console.print(f"[red]VM '{name}' not found in NetBox.[/red]")
+        sys.exit(1)
+    vm = vms[0]
+    if not yes:
+        if not Confirm.ask(f"Delete VM [bold]{vm.get('name')}[/bold] (id={vm['id']}) from NetBox?"):
+            console.print("Aborted.")
+            return
+    api_delete(f"/api/virtualization/virtual-machines/{vm['id']}/")
+    console.print(f"[green]✓[/green] '{name}' aus NetBox entfernt.")
 
 
 # ---------------------------------------------------------------------------
