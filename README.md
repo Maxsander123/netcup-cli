@@ -1,6 +1,6 @@
 # netbox-cli
 
-Standalone CLI zum Verwalten von **NetBox** (DCIM/IPAM/Virtualisierung) – mit integrierter **Netcup VPS**-Verwaltung.
+Standalone CLI für **NetBox** (DCIM/IPAM/Virtualisierung) und **Netcup VPS** — zwei unabhängige Tools in einem.
 
 ---
 
@@ -13,6 +13,10 @@ bash install.sh
 Das Skript erstellt eine virtuelle Python-Umgebung unter `~/.local/share/netbox-cli/venv` und legt einen Shim unter `~/.local/bin/netbox-cli` an.
 
 Abhängigkeiten: `click`, `requests`, `rich`, `urllib3`
+
+---
+
+Jeder Teil funktioniert vollständig eigenständig — NetBox und Netcup haben keine Verbindung zueinander.
 
 ---
 
