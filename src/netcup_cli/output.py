@@ -9,7 +9,64 @@ from rich.table import Table
 console = Console()
 
 
+def _is_task(value: object) -> bool:
+    return isinstance(value, dict) and "uuid" in value and "taskProgress" in value and "state" in value
+
+
+def _wait_task(task: dict) -> dict:
+    import time
+
+    import click
+
+    from netcup_cli.client import build_client
+    from netcup_cli.errors import CLIError
+
+    uuid = task["uuid"]
+    client = build_client()
+    from contextlib import nullcontext
+
+    try:
+        spinner = console.status(f"{task.get('name', 'Task')} …") if console.is_terminal else nullcontext()
+        with spinner as status:
+            while task.get("state") in ("PENDING", "RUNNING", "WAITING_FOR_CANCEL"):
+                if status is not None:
+                    pct = (task.get("taskProgress") or {}).get("progressInPercent") or 0
+                    status.update(f"{task.get('message') or task.get('name')} [dim]({pct:.0f}%)[/dim]")
+                time.sleep(2)
+                task = client.request("GET", f"/tasks/{uuid}")  # type: ignore[assignment]
+    except KeyboardInterrupt:
+        console.print(f"\n[yellow]Still running in background.[/yellow] Check: netcup-cli tasks get {uuid}")
+        raise click.exceptions.Exit(130)
+    if task.get("state") != "FINISHED":
+        err = task.get("responseError") or {}
+        detail = err.get("message") if isinstance(err, dict) else err
+        raise CLIError(f"Task {task.get('name')} {task.get('state')}: {detail or task.get('message') or ''}".strip())
+    return task
+
+
+def _print_task(value: dict) -> None:
+    import click
+
+    ctx = click.get_current_context(silent=True)
+    wait = not (ctx and ctx.find_root().obj and ctx.find_root().obj.get("no_wait"))
+    if wait:
+        value = _wait_task(value)
+        console.print(f"[green]✓[/green] {value.get('message') or value.get('name')}")
+    else:
+        console.print(f"Task [cyan]{value['uuid']}[/cyan] {value.get('state')} — netcup-cli tasks get {value['uuid']}")
+
+
 def print_result(value: object, *, as_json: bool = False) -> None:
+    if _is_task(value):
+        if as_json:
+            import click
+
+            ctx = click.get_current_context(silent=True)
+            if not (ctx and ctx.find_root().obj and ctx.find_root().obj.get("no_wait")):
+                value = _wait_task(value)  # type: ignore[arg-type]
+        else:
+            _print_task(value)  # type: ignore[arg-type]
+            return
     if as_json:
         print(json.dumps(value, indent=2, default=str))
         return

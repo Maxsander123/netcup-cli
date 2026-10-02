@@ -35,11 +35,13 @@ _resolve = resolve_server
 @click.group()
 @click.version_option(__version__, prog_name="netcup-cli")
 @click.option("--json", "as_json", is_flag=True, default=False, help="Output raw JSON.")
+@click.option("--no-wait", is_flag=True, default=False, help="Don't wait for async tasks to finish.")
 @click.pass_context
-def cli(ctx: click.Context, as_json: bool) -> None:
+def cli(ctx: click.Context, as_json: bool, no_wait: bool) -> None:
     """netcup-cli — Netcup Server Control Panel CLI."""
     ctx.ensure_object(dict)
     ctx.obj["json"] = as_json
+    ctx.obj["no_wait"] = no_wait
 
 
 # ── auth ──────────────────────────────────────────────────────────────────────
