@@ -288,7 +288,24 @@ def cmd_images(ctx: click.Context, server: str | None, show_deprecated: bool) ->
         server_id = str(items_s[0]["id"])
         label = items_s[0].get("nickname") or items_s[0].get("hostname") or server_id
 
-    result = client.request("GET", f"/servers/{_q(server_id)}/image/flavours")
+    # Try known paths — the actual path depends on the SCP API version
+    result = None
+    last_err: Exception | None = None
+    for candidate in (
+        f"/servers/{_q(server_id)}/image/flavours",
+        f"/servers/{_q(server_id)}/images/flavours",
+        f"/servers/{_q(server_id)}/images",
+    ):
+        try:
+            result = client.request("GET", candidate)
+            break
+        except CLIError as exc:
+            last_err = exc
+    if result is None:
+        raise CLIError(
+            f"Could not fetch images ({last_err}).\n"
+            f"Tip: browse https://www.servercontrolpanel.de/scp-ui/servers/{server_id}/media/images"
+        )
     if ctx.obj.get("json"):
         click.echo(_json.dumps(result, indent=2, default=str))
         return
