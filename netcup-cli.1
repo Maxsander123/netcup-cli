@@ -1,0 +1,186 @@
+.TH NETCUP\-CLI 1 "October 2026" "netcup-cli 0.1.0" "User Commands"
+.SH NAME
+netcup\-cli \- Command\-line client for the Netcup Server Control Panel (SCP) REST API
+.SH SYNOPSIS
+.B netcup\-cli
+[\fB\-\-json\fR]
+[\fB\-\-version\fR]
+\fICOMMAND\fR [\fIARGS\fR]...
+.SH DESCRIPTION
+.B netcup\-cli
+manages Netcup VPS servers via the SCP REST API.
+Authentication uses the OIDC device\-code flow — no password is required.
+Credentials (refresh token) are stored in
+.I ~/.config/netcup\-cli/credentials.json
+(mode 0600).
+.SH GLOBAL OPTIONS
+.TP
+.B \-\-json
+Output raw JSON instead of formatted tables.
+.TP
+.B \-\-version
+Show the version and exit.
+.TP
+.B \-\-help
+Show help for any command.
+.SH COMMANDS
+.SS Authentication
+.TP
+.B netcup\-cli login
+Authenticate via OIDC device\-code flow. Opens a browser URL; no password needed.
+.TP
+.B netcup\-cli logout
+Remove locally saved credentials (does not revoke the token).
+.TP
+.B netcup\-cli whoami
+Show whether credentials are stored locally.
+.SS Server Management
+.TP
+.B netcup\-cli list
+List all servers (ID, nickname, hostname, template, status).
+.TP
+.BI "netcup\-cli info " SERVER
+Show server details: state, vCPUs, RAM, disks, and a full interface table
+(MAC, IPv4, IPv6 prefix, VLAN, monthly traffic).
+.I SERVER
+may be a numeric ID, nickname, or hostname.
+.TP
+.BI "netcup\-cli start " SERVER " [" \-\-yes ]
+Start a server. Prompts for confirmation unless
+.B \-\-yes
+is given.
+.TP
+.BI "netcup\-cli stop " SERVER " [" \-\-yes ]
+Gracefully stop a server.
+.TP
+.BI "netcup\-cli reset " SERVER " [" \-\-yes ]
+Hard\-reset (reboot) a server.
+.SS VNC Console
+.TP
+.BI "netcup\-cli vnc " SERVER
+Open the SCP web console for a server in the default browser.
+.TP
+.BI "netcup\-cli vnc " SERVER " \-\-url\-only"
+Print the VNC URL without opening a browser.
+.SS Snapshots
+.TP
+.BI "netcup\-cli snapshot list " SERVER
+List snapshots for a server.
+.TP
+.BI "netcup\-cli snapshot create " SERVER " \-\-name " NAME
+Create a snapshot.
+.TP
+.BI "netcup\-cli snapshot delete " SERVER " " SNAPSHOT_ID " [" \-\-yes ]
+Delete a snapshot. Cannot be undone.
+.TP
+.BI "netcup\-cli snapshot restore " SERVER " " SNAPSHOT_ID " [" \-\-yes ]
+Restore a server from a snapshot. All current disk data will be lost.
+.TP
+.BI "netcup\-cli snapshot export " SERVER " " SNAPSHOT_ID
+Export a snapshot.
+.SS OS Images
+.TP
+.B netcup\-cli images
+List available OS images. Uses the first server on the account to determine
+available images (images are architecture\-specific).
+.TP
+.BI "netcup\-cli images " SERVER
+List OS images available for a specific server.
+.TP
+.B netcup\-cli images \-\-all
+Include deprecated images in the listing.
+.SS Installation
+.TP
+.BI "netcup\-cli install " SERVER
+Interactive wizard to reinstall a server with a new OS.
+Prompts for: image, hostname, locale, timezone, user, password,
+SSH keys, SSH password auth, custom post\-install script, and e\-mail notification.
+.B WARNING:
+The target disk is formatted; all data will be lost.
+.PP
+Non\-interactive example:
+.RS
+.nf
+netcup\-cli install Mia \\
+  \-\-image 1234 \\
+  \-\-hostname mia.example.com \\
+  \-\-locale de_DE.UTF\-8 \\
+  \-\-timezone Europe/Berlin \\
+  \-\-username admin \\
+  \-\-ssh\-key 456 \\
+  \-\-no\-ssh\-password \\
+  \-\-script ./post\-install.sh \\
+  \-\-yes
+.fi
+.RE
+.SS SSH Keys
+.TP
+.B netcup\-cli ssh\-key list
+List all SSH keys on the account.
+.TP
+.BI "netcup\-cli ssh\-key add " NAME " " PUBKEY_FILE
+Upload an SSH public key from a file.
+.TP
+.BI "netcup\-cli ssh\-key add " NAME " \-\-key " "\"ssh\-ed25519 AAAA...\""
+Upload an SSH public key from a string.
+.TP
+.BI "netcup\-cli ssh\-key delete " KEY_ID " [" \-\-yes ]
+Delete an SSH key. May remove server access.
+.SS Reverse DNS
+.TP
+.B netcup\-cli rdns ipv4 get|set|delete \fIIP\fR
+Manage IPv4 reverse DNS.
+.TP
+.B netcup\-cli rdns ipv6 get|set|delete \fIIP\fR
+Manage IPv6 reverse DNS.
+.SS Tasks
+.TP
+.B netcup\-cli tasks list|get|cancel
+List, inspect, or cancel asynchronous API tasks.
+.SS Shell Completion
+.TP
+.B netcup\-cli completion bash
+Print Bash completion script. Add to shell config with:
+.BR "eval \(dq$(netcup\-cli completion bash)\(dq"
+.TP
+.B netcup\-cli completion zsh
+Print Zsh completion script.
+.TP
+.B netcup\-cli completion fish
+Print Fish completion script.
+.SH FILES
+.TP
+.I ~/.config/netcup\-cli/credentials.json
+Stored refresh token (mode 0600). Never contains passwords or access tokens.
+.SH ENVIRONMENT
+.TP
+.B NETCUP_OIDC_CLIENT_ID
+Override the OIDC client ID (default:
+.IR scp ).
+.TP
+.B XDG_CONFIG_HOME
+Override the base directory for credential storage.
+.SH EXAMPLES
+.nf
+# First login
+netcup\-cli login
+
+# List servers and open VNC for one
+netcup\-cli list
+netcup\-cli vnc Mia
+
+# Reinstall with Ubuntu (interactive)
+netcup\-cli install Mia
+
+# Create a snapshot before upgrading
+netcup\-cli snapshot create Mia \-\-name pre\-upgrade
+
+# JSON output for scripting
+netcup\-cli \-\-json list | jq '.[].id'
+.fi
+.SH SEE ALSO
+Netcup SCP Web UI: https://www.servercontrolpanel.de
+.br
+Source: https://github.com/Maxsander123/netcup\-cli
+.SH AUTHOR
+Max Sander and contributors.
