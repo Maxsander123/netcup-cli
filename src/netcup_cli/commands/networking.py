@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 import click
 
-from netcup_cli.client import build_client
+from netcup_cli.client import build_client, resolve_server
 from netcup_cli.output import print_result
 from netcup_cli.safety import confirm_action
 
@@ -25,7 +25,7 @@ def server_interfaces_group() -> None:
 def ifaces_list(ctx: click.Context, server_id: str) -> None:
     """List interfaces on a server."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/interfaces")
+    result = client.request("GET", f"/servers/{_q(resolve_server(client, server_id))}/interfaces")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -37,7 +37,7 @@ def ifaces_create(ctx: click.Context, server_id: str, body_file: str) -> None:
     """Create a network interface on a server."""
     body = json.loads(open(body_file).read())
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/interfaces", json_body=body)
+    result = client.request("POST", f"/servers/{_q(resolve_server(client, server_id))}/interfaces", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -48,7 +48,7 @@ def ifaces_create(ctx: click.Context, server_id: str, body_file: str) -> None:
 def ifaces_get(ctx: click.Context, server_id: str, interface_id: str) -> None:
     """Get a specific interface."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}")
+    result = client.request("GET", f"/servers/{_q(resolve_server(client, server_id))}/interfaces/{_q(interface_id)}")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -66,7 +66,7 @@ def ifaces_update(ctx: click.Context, server_id: str, interface_id: str, body_fi
     )
     body = json.loads(open(body_file).read())
     client = build_client()
-    result = client.request("PATCH", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}", json_body=body)
+    result = client.request("PUT", f"/servers/{_q(resolve_server(client, server_id))}/interfaces/{_q(interface_id)}", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -83,7 +83,7 @@ def ifaces_delete(ctx: click.Context, server_id: str, interface_id: str, yes: bo
         non_interactive_error="Interface delete requires --yes for non-interactive use.",
     )
     client = build_client()
-    result = client.request("DELETE", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}")
+    result = client.request("DELETE", f"/servers/{_q(resolve_server(client, server_id))}/interfaces/{_q(interface_id)}")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -99,7 +99,7 @@ def iface_firewall_group() -> None:
 def iface_fw_get(ctx: click.Context, server_id: str, interface_id: str) -> None:
     """Get firewall rules for an interface."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}/firewall")
+    result = client.request("GET", f"/servers/{_q(resolve_server(client, server_id))}/interfaces/{_q(interface_id)}/firewall")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -118,7 +118,7 @@ def iface_fw_update(ctx: click.Context, server_id: str, interface_id: str, body_
     )
     body = json.loads(open(body_file).read())
     client = build_client()
-    result = client.request("PUT", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}/firewall", json_body=body)
+    result = client.request("PUT", f"/servers/{_q(resolve_server(client, server_id))}/interfaces/{_q(interface_id)}/firewall", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -134,7 +134,7 @@ def iface_fw_reapply(ctx: click.Context, server_id: str, interface_id: str, yes:
         yes=yes,
     )
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}/firewall/reapply")
+    result = client.request("POST", f"/servers/{_q(resolve_server(client, server_id))}/interfaces/{_q(interface_id)}/firewall:reapply")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -151,7 +151,7 @@ def iface_fw_restore_policies(ctx: click.Context, server_id: str, interface_id: 
         non_interactive_error="Policy restore requires --yes for non-interactive use.",
     )
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}/firewall/restore-copied-policies")
+    result = client.request("POST", f"/servers/{_q(resolve_server(client, server_id))}/interfaces/{_q(interface_id)}/firewall:restore-copied-policies")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -177,12 +177,12 @@ def rdns_ipv4_get(ctx: click.Context, ip: str) -> None:
 
 @rdns_ipv4.command("set")
 @click.argument("ip")
-@click.option("--hostname", required=True)
+@click.option("--hostname", "rdns", required=True, help="Reverse DNS hostname to set.")
 @click.pass_context
-def rdns_ipv4_set(ctx: click.Context, ip: str, hostname: str) -> None:
+def rdns_ipv4_set(ctx: click.Context, ip: str, rdns: str) -> None:
     """Set rDNS for an IPv4 address."""
     client = build_client()
-    result = client.request("PUT", f"/rdns/ipv4/{_q(ip)}", json_body={"hostname": hostname})
+    result = client.request("POST", "/rdns/ipv4", json_body={"ip": ip, "rdns": rdns})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -213,12 +213,12 @@ def rdns_ipv6_get(ctx: click.Context, ip: str) -> None:
 
 @rdns_ipv6.command("set")
 @click.argument("ip")
-@click.option("--hostname", required=True)
+@click.option("--hostname", "rdns", required=True, help="Reverse DNS hostname to set.")
 @click.pass_context
-def rdns_ipv6_set(ctx: click.Context, ip: str, hostname: str) -> None:
+def rdns_ipv6_set(ctx: click.Context, ip: str, rdns: str) -> None:
     """Set rDNS for an IPv6 address."""
     client = build_client()
-    result = client.request("PUT", f"/rdns/ipv6/{_q(ip)}", json_body={"hostname": hostname})
+    result = client.request("POST", "/rdns/ipv6", json_body={"ip": ip, "rdns": rdns})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 

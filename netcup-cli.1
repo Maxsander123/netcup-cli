@@ -18,6 +18,11 @@ Credentials (refresh token) are stored in
 .B \-\-json
 Output raw JSON instead of formatted tables.
 .TP
+.B \-\-no\-wait
+Do not wait for asynchronous tasks (start, stop, snapshot, ISO, rescue) to finish.
+Check them later with
+.BR "netcup\-cli tasks get" .
+.TP
 .B \-\-version
 Show the version and exit.
 .TP
@@ -67,8 +72,13 @@ Print the VNC URL without opening a browser.
 .BI "netcup\-cli snapshot list " SERVER
 List snapshots for a server.
 .TP
-.BI "netcup\-cli snapshot create " SERVER " \-\-name " NAME
-Create a snapshot.
+.BI "netcup\-cli snapshot create " SERVER " \-\-name " NAME " [\-\-disk " DISK "]"
+Create a snapshot. Online snapshots cover all disks; servers with UEFI need
+.B \-\-disk
+for an offline single\-disk snapshot.
+.TP
+.BI "netcup\-cli snapshot check " SERVER " [\-\-disk " DISK "]"
+Dry\-run: check whether a snapshot can be created.
 .TP
 .BI "netcup\-cli snapshot delete " SERVER " " SNAPSHOT_ID " [" \-\-yes ]
 Delete a snapshot. Cannot be undone.
@@ -137,6 +147,22 @@ Manage IPv6 reverse DNS.
 .TP
 .B netcup\-cli tasks list|get|cancel
 List, inspect, or cancel asynchronous API tasks.
+.SS Advanced Server Operations
+.TP
+.BI "netcup\-cli servers power " SERVER " on|off|poweroff|reset|powercycle|suspend"
+Change power state.
+.TP
+.BI "netcup\-cli servers rescue " "status|activate|deactivate" " " SERVER
+Manage the rescue system (server must be off to activate).
+.TP
+.BI "netcup\-cli servers iso " "status|list|attach|detach" " " SERVER
+Manage the attached ISO.
+.TP
+.BI "netcup\-cli servers metrics " "cpu|disk|network|packets" " " SERVER " [\-\-hours N]"
+Show performance metrics.
+.TP
+.BI "netcup\-cli servers update " SERVER " [options]"
+Change nickname, hostname, autostart, UEFI, boot order, keyboard layout, OS optimization or root password.
 .SS Shell Completion
 .TP
 .B netcup\-cli completion bash

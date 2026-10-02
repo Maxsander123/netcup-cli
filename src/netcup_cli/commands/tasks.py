@@ -5,7 +5,10 @@ from urllib.parse import quote
 import click
 
 from netcup_cli.client import build_client
-from netcup_cli.output import print_result
+from rich import box
+from rich.table import Table
+
+from netcup_cli.output import console, print_result
 from netcup_cli.safety import confirm_action
 
 
@@ -19,22 +22,43 @@ def tasks_group() -> None:
 
 
 @tasks_group.command("list")
-@click.option("--page", type=int, default=None)
-@click.option("--page-size", type=int, default=None)
-@click.option("--status", default=None, help="Filter by status.")
+@click.option("--limit", type=int, default=20, show_default=True)
+@click.option("--offset", type=int, default=0, show_default=True)
+@click.option("--server", "server_id", type=int, default=None, help="Filter by server ID.")
+@click.option("--state", default=None, help="Filter by state, e.g. RUNNING, FINISHED, ERROR.")
 @click.pass_context
-def tasks_list(ctx: click.Context, page: int | None, page_size: int | None, status: str | None) -> None:
-    """List tasks."""
-    params = {}
-    if page is not None:
-        params["page"] = page
-    if page_size is not None:
-        params["pageSize"] = page_size
-    if status is not None:
-        params["status"] = status
+def tasks_list(ctx: click.Context, limit: int, offset: int, server_id: int | None, state: str | None) -> None:
+    """List tasks (newest first)."""
+    params: dict = {"limit": limit, "offset": offset}
+    if server_id is not None:
+        params["serverId"] = server_id
+    if state is not None:
+        params["state"] = state
     client = build_client()
-    result = client.request("GET", "/tasks", params=params or None)
-    print_result(result, as_json=ctx.obj.get("json", False))
+    result = client.request("GET", "/tasks", params=params)
+    if ctx.obj.get("json") or not isinstance(result, list) or not result:
+        print_result(result, as_json=ctx.obj.get("json", False))
+        return
+    t = Table(box=box.ROUNDED)
+    t.add_column("UUID", style="cyan", no_wrap=True)
+    t.add_column("Task", style="bold")
+    t.add_column("State")
+    t.add_column("Progress", justify="right")
+    t.add_column("Started")
+    t.add_column("Message", overflow="fold")
+    for task in result:
+        st = task.get("state") or "—"
+        colour = {"FINISHED": "green", "ERROR": "red", "RUNNING": "yellow"}.get(st, "white")
+        pct = (task.get("taskProgress") or {}).get("progressInPercent")
+        t.add_row(
+            task.get("uuid") or "—",
+            (task.get("name") or "—").removesuffix("Task"),
+            f"[{colour}]{st}[/{colour}]",
+            f"{pct:.0f}%" if isinstance(pct, (int, float)) else "—",
+            (task.get("startedAt") or "")[:19].replace("T", " ") or "—",
+            task.get("message") or "",
+        )
+    console.print(t)
 
 
 @tasks_group.command("get")
@@ -59,5 +83,5 @@ def tasks_cancel(ctx: click.Context, task_id: str, yes: bool) -> None:
         non_interactive_error="Task cancel requires --yes for non-interactive use.",
     )
     client = build_client()
-    result = client.request("POST", f"/tasks/{_q(task_id)}/cancel")
+    result = client.request("PUT", f"/tasks/{_q(task_id)}:cancel")
     print_result(result, as_json=ctx.obj.get("json", False))

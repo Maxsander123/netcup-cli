@@ -16,6 +16,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Also installs the man page — read it with `man netcup-cli`.
 
+## Update
+
+```bash
+netcup-cli update
+```
+
 ## Quick start
 
 ```bash
@@ -69,18 +75,52 @@ netcup-cli ssh-key delete <id>
 ## Snapshots
 
 ```bash
+netcup-cli snapshot check Mia                  # dry-run: is a snapshot possible?
 netcup-cli snapshot list Mia
 netcup-cli snapshot create Mia --name vor-update
-netcup-cli snapshot restore Mia <snap-id>   # confirms before overwriting
-netcup-cli snapshot delete Mia <snap-id>
-netcup-cli snapshot export Mia <snap-id>
+netcup-cli snapshot create Mia --name x --disk vda   # offline, single disk (required on UEFI servers)
+netcup-cli snapshot restore Mia <name>         # confirms before overwriting
+netcup-cli snapshot delete Mia <name>
+netcup-cli snapshot export Mia <name>
+```
+
+Snapshots are identified by **name**, not by a numeric ID.
+
+## Advanced server operations
+
+```bash
+netcup-cli servers update Mia --nickname Foo --autostart --bootorder HDD,CDROM
+netcup-cli servers power Mia reset             # on | off | poweroff | reset | powercycle | suspend
+netcup-cli servers rescue activate Mia         # server must be off; password shown via 'rescue status'
+netcup-cli servers rescue deactivate Mia
+netcup-cli servers iso list Mia                # netcup-provided ISOs
+netcup-cli servers iso attach Mia --iso-id 80  # or --user-iso <name>
+netcup-cli servers iso detach Mia
+netcup-cli servers disks list Mia
+netcup-cli servers metrics cpu|disk|network|packets Mia --hours 6 --last 20
+netcup-cli servers logs Mia --limit 10
+netcup-cli servers user-image Mia <image-name> # install an uploaded image
+```
+
+Everywhere a server is expected you can pass its numeric ID, nickname, hostname or
+the internal name (`v2202…`).
+
+## Async tasks
+
+Actions like start/stop/snapshot/ISO/rescue are asynchronous. By default the CLI waits and
+shows progress until the task finishes. Use `--no-wait` to return immediately:
+
+```bash
+netcup-cli --no-wait stop Mia
+netcup-cli tasks list --limit 5 --state RUNNING
+netcup-cli tasks get <uuid>
 ```
 
 ## Reverse DNS
 
 ```bash
 netcup-cli rdns ipv4 get 1.2.3.4
-netcup-cli rdns ipv4 set 1.2.3.4 --hostname mail.example.com
+netcup-cli rdns ipv4 set 1.2.3.4 --hostname mail.example.com   # must be a valid FQDN
 netcup-cli rdns ipv4 delete 1.2.3.4
 netcup-cli rdns ipv6 get 2a06::1
 ```
@@ -129,6 +169,7 @@ netcup-cli install Mia --image 1234 --yes
 | `tasks` | Manage async tasks |
 | `users` | User account, failover IPs, firewall policies |
 | `servers` | Advanced: disks, interfaces, metrics, ISO |
+| `update` | Update to latest version from GitHub |
 | `completion bash\|zsh\|fish` | Shell completion |
 
 Full documentation: `man netcup-cli`

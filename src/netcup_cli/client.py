@@ -18,10 +18,21 @@ _TIMEOUT = 30
 class SCPClient:
     access_token: str
 
+    @property
+    def user_id(self) -> str:
+        import base64
+        import json as _json
+        payload = self.access_token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        claims = _json.loads(base64.urlsafe_b64decode(payload))
+        if "id" not in claims:
+            raise CLIError("Access token has no user id claim.")
+        return str(claims["id"])
+
     def _headers(self) -> dict:
         return {
             "Authorization": f"Bearer {self.access_token}",
-            "Accept": "application/json",
+            "Accept": "application/json, text/plain;q=0.5",
             "Content-Type": "application/json",
         }
 
@@ -32,15 +43,23 @@ class SCPClient:
         *,
         params: Mapping[str, object] | None = None,
         json_body: object | None = None,
+        merge_patch: bool = False,
     ) -> object | None:
-        url = f"{SCP_BASE}{_API_PREFIX}{path}"
+        import json as _json
+        if path == "/users/me" or path.startswith("/users/me/"):
+            path = f"/users/{self.user_id}{path[len('/users/me'):]}"
+        url = f"{SCP_BASE}{path}" if path.startswith("/api/") else f"{SCP_BASE}{_API_PREFIX}{path}"
+        headers = self._headers()
+        if merge_patch:
+            headers["Content-Type"] = "application/merge-patch+json"
         try:
             resp = requests.request(
                 method.upper(),
                 url,
-                headers=self._headers(),
+                headers=headers,
                 params=params,
-                json=json_body,
+                data=_json.dumps(json_body) if merge_patch and json_body is not None else None,
+                json=json_body if not merge_patch else None,
                 timeout=_TIMEOUT,
             )
         except requests.Timeout:
@@ -59,6 +78,8 @@ class SCPClient:
 
         if resp.status_code == 204 or not resp.content:
             return None
+        if resp.headers.get("Content-Type", "").startswith("text/plain"):
+            return resp.text.strip()
         try:
             return resp.json()
         except Exception:
@@ -78,6 +99,18 @@ class SCPClient:
         if not resp.ok:
             raise CLIError(f"Presigned upload failed ({resp.status_code}): {resp.text[:200]}")
         return resp.headers.get("ETag")
+
+
+def resolve_server(client: SCPClient, name: str) -> str:
+    """Resolve numeric ID, nickname, hostname, or internal name (v22...) to a server ID."""
+    if str(name).isdigit():
+        return str(name)
+    servers = client.request("GET", "/servers")
+    items = servers if isinstance(servers, list) else []
+    for s in items:
+        if name in (s.get("nickname"), s.get("hostname"), s.get("name"), str(s.get("id"))):
+            return str(s["id"])
+    raise CLIError(f"No server found for '{name}'. Use 'netcup-cli list' to see available servers.")
 
 
 def build_client() -> SCPClient:

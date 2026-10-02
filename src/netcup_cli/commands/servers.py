@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 from urllib.parse import quote
 
 import click
 
-from netcup_cli.client import build_client
-from netcup_cli.output import print_result
+from netcup_cli.client import build_client, resolve_server
+from netcup_cli.errors import CLIError
+from netcup_cli.output import print_result, print_server, print_servers
 from netcup_cli.safety import confirm_action
 
 
@@ -16,191 +16,217 @@ def _q(s: str) -> str:
 
 @click.group("servers")
 def servers_group() -> None:
-    """Manage SCP servers."""
+    """Advanced server operations (disks, ISO, metrics, rescue, settings)."""
 
 
 @servers_group.command("list")
-@click.option("--page", type=int, default=None)
-@click.option("--page-size", type=int, default=None)
 @click.pass_context
-def servers_list(ctx: click.Context, page: int | None, page_size: int | None) -> None:
+def servers_list(ctx: click.Context) -> None:
     """List all servers."""
     client = build_client()
-    params = {}
-    if page is not None:
-        params["page"] = page
-    if page_size is not None:
-        params["pageSize"] = page_size
-    result = client.request("GET", "/servers", params=params or None)
-    print_result(result, as_json=ctx.obj.get("json", False))
+    result = client.request("GET", "/servers")
+    print_servers(result if isinstance(result, list) else [], as_json=ctx.obj.get("json", False))
 
 
 @servers_group.command("get")
-@click.argument("server_id")
+@click.argument("server")
 @click.pass_context
-def servers_get(ctx: click.Context, server_id: str) -> None:
+def servers_get(ctx: click.Context, server: str) -> None:
     """Get details of a server."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}")
-    print_result(result, as_json=ctx.obj.get("json", False))
+    result = client.request("GET", f"/servers/{_q(resolve_server(client, server))}")
+    print_server(result, as_json=ctx.obj.get("json", False))  # type: ignore[arg-type]
 
 
 @servers_group.command("update")
-@click.argument("server_id")
+@click.argument("server")
 @click.option("--nickname", default=None)
-@click.option("--state-option", default=None, help="State change (e.g. START, STOP, REBOOT).")
-@click.option("--body-file", type=click.Path(exists=True), default=None, help="JSON file with request body.")
+@click.option("--hostname", default=None)
+@click.option("--autostart/--no-autostart", default=None)
+@click.option("--uefi/--no-uefi", default=None)
+@click.option("--bootorder", default=None, help="Comma-separated: HDD,CDROM,NETWORK")
+@click.option("--keyboard-layout", default=None, help="e.g. de, en-us")
+@click.option("--os-optimization", type=click.Choice(["LINUX", "WINDOWS", "BSD", "LINUX_LEGACY", "UNKNOWN"]), default=None)
+@click.option("--root-password", is_flag=True, default=False, help="Prompt for and set a new root password.")
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def servers_update(ctx: click.Context, server_id: str, nickname: str | None, state_option: str | None, body_file: str | None, yes: bool) -> None:
-    """Update a server's attributes."""
-    if state_option and state_option.upper() in ("STOP", "REBOOT", "HARD_STOP", "HARD_REBOOT"):
-        confirm_action(
-            f"Apply state '{state_option}' to server {server_id}? This may interrupt the server.",
-            yes=yes,
-        )
-    body: dict = {}
-    if body_file:
-        body = json.loads(open(body_file).read())
+def servers_update(
+    ctx: click.Context,
+    server: str,
+    nickname: str | None,
+    hostname: str | None,
+    autostart: bool | None,
+    uefi: bool | None,
+    bootorder: str | None,
+    keyboard_layout: str | None,
+    os_optimization: str | None,
+    root_password: bool,
+    yes: bool,
+) -> None:
+    """Change server settings. Each option is sent as a separate PATCH (API accepts one at a time)."""
+    patches: list[dict] = []
     if nickname is not None:
-        body["nickname"] = nickname
-    if state_option is not None:
-        body["stateOption"] = state_option
+        patches.append({"nickname": nickname})
+    if hostname is not None:
+        patches.append({"hostname": hostname})
+    if autostart is not None:
+        patches.append({"autostart": autostart})
+    if uefi is not None:
+        patches.append({"uefi": uefi})
+    if bootorder:
+        patches.append({"bootorder": [b.strip().upper() for b in bootorder.split(",") if b.strip()]})
+    if keyboard_layout:
+        patches.append({"keyboardLayout": keyboard_layout})
+    if os_optimization:
+        patches.append({"os_optimization": os_optimization})
+    if root_password:
+        pw = click.prompt("New root password", hide_input=True, confirmation_prompt=True)
+        patches.append({"rootPassword": pw})
+    if not patches:
+        raise CLIError("Nothing to update. See 'netcup-cli servers update --help'.")
     client = build_client()
-    result = client.request("PATCH", f"/servers/{_q(server_id)}", json_body=body)
-    print_result(result, as_json=ctx.obj.get("json", False))
+    server_id = resolve_server(client, server)
+    if uefi is not None or bootorder or root_password:
+        confirm_action(f"Apply settings to server {server} ({server_id})?", yes=yes)
+    for body in patches:
+        result = client.request("PATCH", f"/servers/{_q(server_id)}", json_body=body, merge_patch=True)
+        print_result(result, as_json=ctx.obj.get("json", False))
+
+
+_POWER = {
+    "on": ("ON", None),
+    "off": ("OFF", None),
+    "poweroff": ("OFF", "POWEROFF"),
+    "reset": ("ON", "RESET"),
+    "powercycle": ("ON", "POWERCYCLE"),
+    "suspend": ("SUSPENDED", None),
+}
 
 
 @servers_group.command("power")
-@click.argument("server_id")
-@click.argument("action", type=click.Choice(["start", "stop", "reboot", "hard-stop", "hard-reboot"], case_sensitive=False))
+@click.argument("server")
+@click.argument("action", type=click.Choice(list(_POWER), case_sensitive=False))
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def servers_power(ctx: click.Context, server_id: str, action: str, yes: bool) -> None:
-    """Change the power state of a server."""
-    confirm_action(
-        f"Apply power action '{action}' to server {server_id}?",
-        yes=yes,
-        non_interactive_error="Power actions require --yes for non-interactive use.",
-    )
+def servers_power(ctx: click.Context, server: str, action: str, yes: bool) -> None:
+    """Change power state: on, off (ACPI), poweroff (hard), reset, powercycle, suspend."""
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/power", json_body={"action": action.upper().replace("-", "_")})
+    server_id = resolve_server(client, server)
+    confirm_action(f"Apply power action '{action}' to server {server} ({server_id})?", yes=yes)
+    state, option = _POWER[action.lower()]
+    result = client.request(
+        "PATCH",
+        f"/servers/{_q(server_id)}",
+        params={"stateOption": option} if option else None,
+        json_body={"state": state},
+        merge_patch=True,
+    )
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @servers_group.command("gpu-driver")
-@click.argument("server_id")
+@click.argument("server")
 @click.pass_context
-def servers_gpu_driver(ctx: click.Context, server_id: str) -> None:
-    """Get GPU driver information for a server."""
+def servers_gpu_driver(ctx: click.Context, server: str) -> None:
+    """Get GPU driver download info for a server."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/gpu-driver")
+    result = client.request("GET", f"/servers/{_q(resolve_server(client, server))}/gpu-driver")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @servers_group.group("guest-agent")
 def servers_guest_agent() -> None:
-    """Manage guest agent on a server."""
+    """QEMU guest agent information."""
 
 
 @servers_guest_agent.command("get")
-@click.argument("server_id")
+@click.argument("server")
 @click.pass_context
-def guest_agent_get(ctx: click.Context, server_id: str) -> None:
-    """Get guest agent configuration."""
+def guest_agent_get(ctx: click.Context, server: str) -> None:
+    """Get guest agent data."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/guest-agent")
+    result = client.request("GET", f"/servers/{_q(resolve_server(client, server))}/guest-agent")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @servers_guest_agent.command("status")
-@click.argument("server_id")
+@click.argument("server")
 @click.pass_context
-def guest_agent_status(ctx: click.Context, server_id: str) -> None:
+def guest_agent_status(ctx: click.Context, server: str) -> None:
     """Get guest agent status."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/guest-agent/status")
+    result = client.request("GET", f"/servers/{_q(resolve_server(client, server))}/guest-agent/status")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
-@servers_group.group("logs")
-def servers_logs() -> None:
-    """Server log operations."""
-
-
-@servers_logs.command("list")
-@click.argument("server_id")
-@click.option("--page", type=int, default=None)
-@click.option("--page-size", type=int, default=None)
+@servers_group.command("logs")
+@click.argument("server")
+@click.option("--limit", type=int, default=20, show_default=True)
+@click.option("--offset", type=int, default=0, show_default=True)
 @click.pass_context
-def servers_logs_list(ctx: click.Context, server_id: str, page: int | None, page_size: int | None) -> None:
+def servers_logs(ctx: click.Context, server: str, limit: int, offset: int) -> None:
     """List server logs."""
     client = build_client()
-    params = {}
-    if page is not None:
-        params["page"] = page
-    if page_size is not None:
-        params["pageSize"] = page_size
-    result = client.request("GET", f"/servers/{_q(server_id)}/logs", params=params or None)
+    result = client.request(
+        "GET", f"/servers/{_q(resolve_server(client, server))}/logs", params={"limit": limit, "offset": offset}
+    )
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @servers_group.group("rescue")
 def servers_rescue() -> None:
-    """Manage rescue mode."""
+    """Manage the rescue system."""
 
 
-@servers_rescue.command("get")
-@click.argument("server_id")
+@servers_rescue.command("status")
+@click.argument("server")
 @click.pass_context
-def rescue_get(ctx: click.Context, server_id: str) -> None:
-    """Get rescue mode configuration."""
+def rescue_status(ctx: click.Context, server: str) -> None:
+    """Show rescue system status."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/rescue")
+    result = client.request("GET", f"/servers/{_q(resolve_server(client, server))}/rescuesystem")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @servers_rescue.command("activate")
-@click.argument("server_id")
+@click.argument("server")
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def rescue_activate(ctx: click.Context, server_id: str, yes: bool) -> None:
-    """Activate rescue mode (interrupts the server)."""
-    confirm_action(
-        f"Activate rescue mode on server {server_id}? The server will be rebooted into rescue.",
-        yes=yes,
-        non_interactive_error="Rescue activation requires --yes for non-interactive use.",
-    )
+def rescue_activate(ctx: click.Context, server: str, yes: bool) -> None:
+    """Activate the rescue system (reboots the server)."""
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/rescue/activate")
+    server_id = resolve_server(client, server)
+    confirm_action(f"Activate rescue system on {server} ({server_id})? The server will reboot.", yes=yes)
+    result = client.request("POST", f"/servers/{_q(server_id)}/rescuesystem")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @servers_rescue.command("deactivate")
-@click.argument("server_id")
+@click.argument("server")
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def rescue_deactivate(ctx: click.Context, server_id: str, yes: bool) -> None:
-    """Deactivate rescue mode."""
-    confirm_action(
-        f"Deactivate rescue mode on server {server_id}?",
-        yes=yes,
-    )
+def rescue_deactivate(ctx: click.Context, server: str, yes: bool) -> None:
+    """Deactivate the rescue system."""
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/rescue/deactivate")
+    server_id = resolve_server(client, server)
+    confirm_action(f"Deactivate rescue system on {server} ({server_id})?", yes=yes)
+    result = client.request("DELETE", f"/servers/{_q(server_id)}/rescuesystem")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
-@servers_group.group("storage")
-def servers_storage() -> None:
-    """Storage operations."""
-
-
-@servers_storage.command("optimize")
-@click.argument("server_id")
+@servers_group.command("optimize-storage")
+@click.argument("server")
+@click.option("--disk", "disks", multiple=True, help="Disk name to optimize (repeatable, default: all).")
+@click.option("--start/--no-start", default=True, show_default=True, help="Start server after optimization.")
+@click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def storage_optimize(ctx: click.Context, server_id: str) -> None:
-    """Optimize server storage."""
+def storage_optimize(ctx: click.Context, server: str, disks: tuple[str, ...], start: bool, yes: bool) -> None:
+    """Run storage optimization (server must be off)."""
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/storage/optimize")
+    server_id = resolve_server(client, server)
+    confirm_action(f"Run storage optimization on {server} ({server_id})?", yes=yes)
+    params: dict = {"startAfterOptimization": str(start).lower()}
+    if disks:
+        params["disks"] = list(disks)
+    result = client.request("POST", f"/servers/{_q(server_id)}/storageoptimization", params=params)
     print_result(result, as_json=ctx.obj.get("json", False))

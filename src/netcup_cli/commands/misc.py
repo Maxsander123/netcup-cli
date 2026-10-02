@@ -16,7 +16,7 @@ def api_group() -> None:
 def api_ping(ctx: click.Context) -> None:
     """Ping the SCP API to check connectivity."""
     client = build_client()
-    result = client.request("GET", "/ping")
+    result = client.request("GET", "/api/ping")
     print_result(result or {"status": "ok"}, as_json=ctx.obj.get("json", False))
 
 
@@ -30,7 +30,7 @@ def api_openapi() -> None:
 def api_openapi_get(ctx: click.Context) -> None:
     """Download the live OpenAPI schema from the SCP API."""
     client = build_client()
-    result = client.request("GET", "/openapi.json")
+    result = client.request("GET", "/openapi")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -39,7 +39,7 @@ def api_openapi_get(ctx: click.Context) -> None:
 def api_openapi_explore(ctx: click.Context) -> None:
     """List all operations in the OpenAPI schema."""
     client = build_client()
-    spec = client.request("GET", "/openapi.json")
+    spec = client.request("GET", "/openapi")
     if not isinstance(spec, dict):
         console.print("[yellow]No schema returned.[/yellow]")
         return

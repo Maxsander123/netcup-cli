@@ -6,7 +6,7 @@ import click
 
 from netcup_cli import __version__
 from netcup_cli.auth import AuthClient
-from netcup_cli.client import SCPClient, build_client
+from netcup_cli.client import build_client, resolve_server
 from netcup_cli.config import Credentials, delete_credentials, load_credentials, save_credentials
 from netcup_cli.errors import CLIError
 from netcup_cli.output import console, print_result, print_server, print_servers
@@ -17,7 +17,7 @@ from netcup_cli.safety import confirm_action
 
 # Advanced subgroups
 from netcup_cli.commands.disks import disks_group
-from netcup_cli.commands.images import server_iso_group, server_snapshots_group
+from netcup_cli.commands.images import server_iso_group, server_user_image
 from netcup_cli.commands.metrics import metrics_group
 from netcup_cli.commands.misc import api_group, maintenance_group
 from netcup_cli.commands.networking import rdns_group, server_interfaces_group, vlans_group
@@ -29,26 +29,19 @@ def _q(s: str) -> str:
     return quote(str(s), safe="")
 
 
-def _resolve(client: SCPClient, name: str) -> str:
-    """Resolve nickname, hostname, or numeric ID to a server ID string."""
-    if str(name).isdigit():
-        return str(name)
-    servers = client.request("GET", "/servers")
-    items: list[dict] = servers if isinstance(servers, list) else (servers or {}).get("data", [])  # type: ignore[union-attr]
-    for s in items:
-        if s.get("nickname") == name or s.get("hostname") == name or str(s.get("id")) == name:
-            return str(s["id"])
-    raise CLIError(f"No server found for '{name}'. Use 'netcup-cli list' to see available servers.")
+_resolve = resolve_server
 
 
 @click.group()
 @click.version_option(__version__, prog_name="netcup-cli")
 @click.option("--json", "as_json", is_flag=True, default=False, help="Output raw JSON.")
+@click.option("--no-wait", is_flag=True, default=False, help="Don't wait for async tasks to finish.")
 @click.pass_context
-def cli(ctx: click.Context, as_json: bool) -> None:
+def cli(ctx: click.Context, as_json: bool, no_wait: bool) -> None:
     """netcup-cli — Netcup Server Control Panel CLI."""
     ctx.ensure_object(dict)
     ctx.obj["json"] = as_json
+    ctx.obj["no_wait"] = no_wait
 
 
 # ── auth ──────────────────────────────────────────────────────────────────────
@@ -122,7 +115,7 @@ def cmd_start(ctx: click.Context, server: str, yes: bool) -> None:
     client = build_client()
     server_id = _resolve(client, server)
     confirm_action(f"Start server {server} ({server_id})?", yes=yes)
-    result = client.request("POST", f"/servers/{_q(server_id)}/power", json_body={"action": "START"})
+    result = client.request("PATCH", f"/servers/{_q(server_id)}", json_body={"state": "ON"}, merge_patch=True)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -135,7 +128,7 @@ def cmd_stop(ctx: click.Context, server: str, yes: bool) -> None:
     client = build_client()
     server_id = _resolve(client, server)
     confirm_action(f"Stop server {server} ({server_id})?", yes=yes)
-    result = client.request("POST", f"/servers/{_q(server_id)}/power", json_body={"action": "STOP"})
+    result = client.request("PATCH", f"/servers/{_q(server_id)}", json_body={"state": "OFF"}, merge_patch=True)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -148,7 +141,13 @@ def cmd_reset(ctx: click.Context, server: str, yes: bool) -> None:
     client = build_client()
     server_id = _resolve(client, server)
     confirm_action(f"Hard-reset server {server} ({server_id})? This interrupts the server.", yes=yes)
-    result = client.request("POST", f"/servers/{_q(server_id)}/power", json_body={"action": "HARD_REBOOT"})
+    result = client.request(
+        "PATCH",
+        f"/servers/{_q(server_id)}",
+        params={"stateOption": "RESET"},
+        json_body={"state": "ON"},
+        merge_patch=True,
+    )
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -205,15 +204,36 @@ def snapshot_list(ctx: click.Context, server: str) -> None:
 @click.argument("server")
 @click.option("--name", "-n", required=True, help="Snapshot name.")
 @click.option("--description", "-d", default="", help="Optional description.")
+@click.option("--disk", "disk_name", default=None, help="Snapshot a single disk offline (required on UEFI servers, e.g. vda).")
 @click.pass_context
-def snapshot_create(ctx: click.Context, server: str, name: str, description: str) -> None:
-    """Create a snapshot."""
+def snapshot_create(ctx: click.Context, server: str, name: str, description: str, disk_name: str | None) -> None:
+    """Create a snapshot (online for all disks, or offline for one disk with --disk)."""
     client = build_client()
     server_id = _resolve(client, server)
-    body: dict = {"name": name}
+    body: dict = {"name": name, "onlineSnapshot": disk_name is None}
     if description:
         body["description"] = description
+    if disk_name:
+        body["diskName"] = disk_name
     result = client.request("POST", f"/servers/{_q(server_id)}/snapshots", json_body=body)
+    print_result(result, as_json=ctx.obj.get("json", False))
+
+
+@snapshot_group.command("check")
+@click.argument("server")
+@click.option("--disk", "disk_name", default=None, help="Check offline snapshot of a single disk.")
+@click.pass_context
+def snapshot_check(ctx: click.Context, server: str, disk_name: str | None) -> None:
+    """Dry-run: check whether a snapshot can be created."""
+    client = build_client()
+    server_id = _resolve(client, server)
+    body: dict = {"onlineSnapshot": disk_name is None}
+    if disk_name:
+        body["diskName"] = disk_name
+    result = client.request("POST", f"/servers/{_q(server_id)}/snapshots:dryrun", json_body=body)
+    if not result and not ctx.obj.get("json"):
+        console.print("[green]✓[/green] Snapshot possible.")
+        return
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -262,6 +282,10 @@ def snapshot_export(ctx: click.Context, server: str, snapshot_id: str) -> None:
 
 # ── images (list available OS images) ────────────────────────────────────────
 
+def _os_name(flavour: dict) -> str:
+    return (flavour.get("image") or {}).get("name") or flavour.get("name") or "—"
+
+
 @cli.command("images")
 @click.argument("server", required=False, default=None)
 @click.option("--all", "show_deprecated", is_flag=True, help="Include deprecated images.")
@@ -288,24 +312,7 @@ def cmd_images(ctx: click.Context, server: str | None, show_deprecated: bool) ->
         server_id = str(items_s[0]["id"])
         label = items_s[0].get("nickname") or items_s[0].get("hostname") or server_id
 
-    # Try known paths — the actual path depends on the SCP API version
-    result = None
-    last_err: Exception | None = None
-    for candidate in (
-        f"/servers/{_q(server_id)}/image/flavours",
-        f"/servers/{_q(server_id)}/images/flavours",
-        f"/servers/{_q(server_id)}/images",
-    ):
-        try:
-            result = client.request("GET", candidate)
-            break
-        except CLIError as exc:
-            last_err = exc
-    if result is None:
-        raise CLIError(
-            f"Could not fetch images ({last_err}).\n"
-            f"Tip: browse https://www.servercontrolpanel.de/scp-ui/servers/{server_id}/media/images"
-        )
+    result = client.request("GET", f"/servers/{_q(server_id)}/imageflavours")
     if ctx.obj.get("json"):
         click.echo(_json.dumps(result, indent=2, default=str))
         return
@@ -315,23 +322,19 @@ def cmd_images(ctx: click.Context, server: str | None, show_deprecated: bool) ->
     if not items:
         console.print("[dim]No images available.[/dim]")
         return
+    items = sorted(items, key=_os_name)
     t = Table(box=rbox.ROUNDED, title=f"OS Images — {label}")
     t.add_column("ID", style="cyan", no_wrap=True)
-    t.add_column("Name", style="bold")
-    t.add_column("Method")
-    t.add_column("Arch")
-    if show_deprecated:
-        t.add_column("Deprecated", style="dim")
+    t.add_column("OS", style="bold")
+    t.add_column("Flavour")
+    t.add_column("Description")
     for img in items:
-        row = [
+        t.add_row(
             str(img.get("id", "")),
-            img.get("name") or "—",
-            img.get("installationMethod") or "—",
-            img.get("architecture") or "—",
-        ]
-        if show_deprecated:
-            row.append("yes" if img.get("deprecated") else "")
-        t.add_row(*row)
+            _os_name(img),
+            img.get("alias") or img.get("name") or "—",
+            (img.get("text") or "").strip()[:60],
+        )
     console.print(t)
     console.print(f"[dim]{len(items)} image(s)[/dim]")
 
@@ -383,25 +386,25 @@ def cmd_install(
 
     # ── Interactive image picker if --image not given ─────────────────────────
     if not image_id:
-        result = client.request("GET", f"/servers/{_q(server_id)}/image/flavours")
+        result = client.request("GET", f"/servers/{_q(server_id)}/imageflavours")
         items: list[dict] = result if isinstance(result, list) else (result or {}).get("data", [])  # type: ignore[union-attr]
-        items = [i for i in items if not i.get("deprecated")]
         if not items:
             raise CLIError("No images available for this server.")
+        items = sorted(items, key=_os_name)
         t = Table(box=rbox.ROUNDED, title=f"Available OS Images — {server}")
         t.add_column("#", style="dim")
         t.add_column("ID", style="cyan", no_wrap=True)
-        t.add_column("Name", style="bold")
-        t.add_column("Method")
+        t.add_column("OS", style="bold")
+        t.add_column("Flavour")
         for idx, img in enumerate(items, 1):
-            t.add_row(str(idx), str(img.get("id", "")), img.get("name") or "—", img.get("installationMethod") or "—")
+            t.add_row(str(idx), str(img.get("id", "")), _os_name(img), img.get("alias") or img.get("name") or "—")
         console.print(t)
         raw = click.prompt("Select image number")
         if not raw.isdigit() or not (1 <= int(raw) <= len(items)):
             raise CLIError("Invalid selection.")
         chosen = items[int(raw) - 1]
         image_id = str(chosen["id"])
-        console.print(f"Selected: [bold]{chosen.get('name')}[/bold] (ID {image_id})")
+        console.print(f"Selected: [bold]{_os_name(chosen)}[/bold] (ID {image_id})")
 
     # ── Prompt for missing common options ─────────────────────────────────────
     if not hostname:
@@ -439,8 +442,8 @@ def cmd_install(
         if len(script_content) > 10000:
             raise CLIError("Custom script exceeds 10,000 character limit.")
 
-    # ── Build request body ────────────────────────────────────────────────────
-    body: dict = {"imageId": image_id}
+    # ── Build request body (real API field names) ─────────────────────────────
+    body: dict = {"imageFlavourId": int(image_id)}
     if hostname:
         body["hostname"] = hostname
     if locale:
@@ -448,28 +451,27 @@ def cmd_install(
     if timezone:
         body["timezone"] = timezone
     if partitioning:
-        body["partitioning"] = partitioning
+        body["rootPartitionFullDiskSize"] = (partitioning.lower() in ("full", "true", "1"))
     if username:
-        body["createAdditionalUser"] = True
-        body["username"] = username
+        body["additionalUserUsername"] = username
     if password:
-        body["userPassword"] = password
+        body["additionalUserPassword"] = password
     if ssh_key_ids:
-        body["sshKeyIds"] = list(ssh_key_ids)
+        body["sshKeyIds"] = [int(k) for k in ssh_key_ids]
     body["sshPasswordAuthentication"] = not no_ssh_password
     if script_content:
         body["customScript"] = script_content
-    body["sendEmail"] = send_email
+    body["emailToExecutingUser"] = send_email
 
     # ── Summary + confirmation ────────────────────────────────────────────────
     console.print(f"\n[bold yellow]Install summary for {server} ({server_id}):[/bold yellow]")
-    console.print(f"  Image:    {image_id}")
-    console.print(f"  Hostname: {hostname}")
-    console.print(f"  Locale:   {locale}  /  Timezone: {timezone}")
+    console.print(f"  Image ID:  {image_id}")
+    console.print(f"  Hostname:  {hostname}")
+    console.print(f"  Locale:    {locale}  /  Timezone: {timezone}")
     if username:
-        console.print(f"  User:     {username}")
+        console.print(f"  User:      {username}")
     if ssh_key_ids:
-        console.print(f"  SSH keys: {', '.join(ssh_key_ids)}")
+        console.print(f"  SSH keys:  {', '.join(ssh_key_ids)}")
     console.print(f"  SSH password auth: {'disabled' if no_ssh_password else 'enabled'}")
     if script_content:
         console.print(f"  Custom script: {len(script_content)} chars")
@@ -479,7 +481,7 @@ def cmd_install(
         yes=yes,
     )
 
-    result = client.request("POST", f"/servers/{_q(server_id)}/image/install", json_body=body)
+    result = client.request("POST", f"/servers/{_q(server_id)}/image", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))
     console.print("[green]✓[/green] Install started.")
 
@@ -510,9 +512,18 @@ def ssh_key_list(ctx: click.Context) -> None:
     t = Table(box=rbox.ROUNDED)
     t.add_column("ID", style="cyan", no_wrap=True)
     t.add_column("Name", style="bold")
-    t.add_column("Fingerprint")
+    t.add_column("Type")
+    t.add_column("Comment")
+    t.add_column("Created")
     for k in keys:
-        t.add_row(str(k.get("id", "")), k.get("name") or "—", k.get("fingerprint") or k.get("publicKey", "")[:40] + "…")
+        parts = (k.get("key") or "").split()
+        t.add_row(
+            str(k.get("id", "")),
+            k.get("name") or "—",
+            parts[0] if parts else "—",
+            " ".join(parts[2:]) or "—",
+            (k.get("createdAt") or "")[:10] or "—",
+        )
     console.print(t)
 
 
@@ -536,7 +547,7 @@ def ssh_key_add(ctx: click.Context, name: str, pubkey_file: str | None, key_str:
     else:
         pub = click.prompt("Public key").strip()
     client = build_client()
-    result = client.request("POST", "/users/me/ssh-keys", json_body={"name": name, "publicKey": pub})
+    result = client.request("POST", "/users/me/ssh-keys", json_body={"name": name, "key": pub})
     print_result(result, as_json=ctx.obj.get("json", False))
     console.print(f"[green]✓[/green] SSH key '{name}' added.")
 
@@ -570,8 +581,48 @@ servers_group.add_command(disks_group)
 servers_group.add_command(server_iso_group, name="iso")
 servers_group.add_command(server_interfaces_group, name="interfaces")
 servers_group.add_command(metrics_group)
-servers_group.add_command(server_snapshots_group, name="snapshots")
+servers_group.add_command(server_user_image)
 cli.add_command(servers_group)
+
+
+@cli.command("update")
+def cmd_update() -> None:
+    """Update netcup-cli to the latest version from GitHub."""
+    import subprocess as sp
+    repo = "https://github.com/Maxsander123/netcup-cli"
+    man_src = f"{repo}/raw/main/netcup-cli.1"
+    man_dir = _man_dir()
+
+    console.print("Updating netcup-cli ...")
+    try:
+        sp.run(["uv", "tool", "install", f"git+{repo}", "--force"], check=True)
+    except FileNotFoundError:
+        raise CLIError("uv not found. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh")
+    except sp.CalledProcessError as exc:
+        raise CLIError(f"Update failed: {exc}")
+
+    # Update man page
+    try:
+        import urllib.request
+        man_dir.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(man_src, man_dir / "netcup-cli.1")
+        sp.run(["mandb", "-q"], check=False, capture_output=True)
+    except Exception:
+        pass  # man page update is best-effort
+
+    console.print("[green]✓[/green] netcup-cli updated.")
+    try:
+        result = sp.run(["netcup-cli", "--version"], capture_output=True, text=True)
+        console.print(f"  {result.stdout.strip()}")
+    except Exception:
+        pass
+
+
+def _man_dir():
+    from pathlib import Path
+    import os
+    base = os.environ.get("MANPATH", str(Path.home() / ".local" / "share" / "man"))
+    return Path(base.split(":")[0]) / "man1"
 
 
 @cli.command("completion")
