@@ -9,7 +9,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "Installing netcup-cli to $INSTALL_DIR ..."
 python3 -m venv "$INSTALL_DIR"
 "$INSTALL_DIR/bin/pip" install --quiet --upgrade pip
-"$INSTALL_DIR/bin/pip" install --quiet -e "$REPO_DIR"
+"$INSTALL_DIR/bin/pip" install --quiet "$REPO_DIR"
 
 mkdir -p "$BIN_DIR"
 cat > "$BIN_DIR/netcup-cli" <<EOF
@@ -19,4 +19,4 @@ EOF
 chmod +x "$BIN_DIR/netcup-cli"
 
 echo "netcup-cli installed. Make sure $BIN_DIR is in your PATH."
-echo "Run: netcup-cli auth login"
+echo "Run: netcup-cli login"
