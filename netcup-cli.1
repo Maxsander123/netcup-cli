@@ -147,21 +147,21 @@ Manage IPv6 reverse DNS.
 .TP
 .B netcup\-cli tasks list|get|cancel
 List, inspect, or cancel asynchronous API tasks.
-.SS Advanced Server Operations
+.SS More Server Operations
 .TP
-.BI "netcup\-cli servers power " SERVER " on|off|poweroff|reset|powercycle|suspend"
+.BI "netcup\-cli power " SERVER " on|off|poweroff|reset|powercycle|suspend"
 Change power state.
 .TP
-.BI "netcup\-cli servers rescue " "status|activate|deactivate" " " SERVER
+.BI "netcup\-cli rescue " "status|activate|deactivate" " " SERVER
 Manage the rescue system (server must be off to activate).
 .TP
-.BI "netcup\-cli servers iso " "status|list|attach|detach" " " SERVER
+.BI "netcup\-cli iso " "status|list|attach|detach" " " SERVER
 Manage the attached ISO.
 .TP
-.BI "netcup\-cli servers metrics " "cpu|disk|network|packets" " " SERVER " [\-\-hours N]"
+.BI "netcup\-cli metrics " "cpu|disk|network|packets" " " SERVER " [\-\-hours N]"
 Show performance metrics.
 .TP
-.BI "netcup\-cli servers update " SERVER " [options]"
+.BI "netcup\-cli set " SERVER " [options]"
 Change nickname, hostname, autostart, UEFI, boot order, keyboard layout, OS optimization or root password.
 .SS Shell Completion
 .TP

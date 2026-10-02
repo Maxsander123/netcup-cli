@@ -86,20 +86,20 @@ netcup-cli snapshot export Mia <name>
 
 Snapshots are identified by **name**, not by a numeric ID.
 
-## Advanced server operations
+## More server operations
 
 ```bash
-netcup-cli servers update Mia --nickname Foo --autostart --bootorder HDD,CDROM
-netcup-cli servers power Mia reset             # on | off | poweroff | reset | powercycle | suspend
-netcup-cli servers rescue activate Mia         # server must be off; password shown via 'rescue status'
-netcup-cli servers rescue deactivate Mia
-netcup-cli servers iso list Mia                # netcup-provided ISOs
-netcup-cli servers iso attach Mia --iso-id 80  # or --user-iso <name>
-netcup-cli servers iso detach Mia
-netcup-cli servers disks list Mia
-netcup-cli servers metrics cpu|disk|network|packets Mia --hours 6 --last 20
-netcup-cli servers logs Mia --limit 10
-netcup-cli servers user-image Mia <image-name> # install an uploaded image
+netcup-cli set Mia --nickname Foo --autostart --bootorder HDD,CDROM
+netcup-cli power Mia reset             # on | off | poweroff | reset | powercycle | suspend
+netcup-cli rescue activate Mia         # server must be off; password shown via 'rescue status'
+netcup-cli rescue deactivate Mia
+netcup-cli iso list Mia                # netcup-provided ISOs
+netcup-cli iso attach Mia --iso-id 80  # or --user-iso <name>
+netcup-cli iso detach Mia
+netcup-cli disks list Mia
+netcup-cli metrics cpu|disk|network|packets Mia --hours 6 --last 20
+netcup-cli logs Mia --limit 10
+netcup-cli user-image Mia <image-name> # install an uploaded image
 ```
 
 Everywhere a server is expected you can pass its numeric ID, nickname, hostname or
@@ -168,7 +168,7 @@ netcup-cli install Mia --image 1234 --yes
 | `rdns` | Manage reverse DNS |
 | `tasks` | Manage async tasks |
 | `users` | User account, failover IPs, firewall policies |
-| `servers` | Advanced: disks, interfaces, metrics, ISO |
+| `set` `power` `rescue` `iso` `disks` `interfaces` `metrics` `logs` `guest-agent` `user-image` `optimize-storage` | More server operations |
 | `update` | Update to latest version from GitHub |
 | `completion bash\|zsh\|fish` | Shell completion |
 

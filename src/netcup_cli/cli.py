@@ -576,13 +576,14 @@ cli.add_command(vlans_group)
 cli.add_command(api_group)
 cli.add_command(maintenance_group)
 
-from netcup_cli.commands.servers import servers_group
-servers_group.add_command(disks_group)
-servers_group.add_command(server_iso_group, name="iso")
-servers_group.add_command(server_interfaces_group, name="interfaces")
-servers_group.add_command(metrics_group)
-servers_group.add_command(server_user_image)
-cli.add_command(servers_group)
+from netcup_cli.commands import servers as _srv
+
+for _cmd in (
+    _srv.servers_set, _srv.servers_power, _srv.servers_gpu_driver, _srv.servers_guest_agent,
+    _srv.servers_logs, _srv.servers_rescue, _srv.storage_optimize,
+    disks_group, server_iso_group, server_interfaces_group, metrics_group, server_user_image,
+):
+    cli.add_command(_cmd)
 
 
 @cli.command("update")
