@@ -1,4 +1,4 @@
-# netbox-cli
+# netcup-cli
 
 Standalone CLI zur Verwaltung von **Netcup VPS**-Servern.
 
