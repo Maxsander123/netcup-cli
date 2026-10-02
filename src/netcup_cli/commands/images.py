@@ -27,52 +27,24 @@ def server_image_group() -> None:
 def image_flavours(ctx: click.Context, server_id: str) -> None:
     """List available image flavours for a server."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/image/flavours")
-    print_result(result, as_json=ctx.obj.get("json", False))
-
-
-@server_image_group.command("install")
-@click.argument("server_id")
-@click.option("--image-id", required=True, help="ID of the image to install.")
-@click.option("--disk-id", default=None, help="Target disk ID.")
-@click.option("--hostname", default=None)
-@click.option("--yes", "-y", is_flag=True)
-@click.pass_context
-def image_install(ctx: click.Context, server_id: str, image_id: str, disk_id: str | None, hostname: str | None, yes: bool) -> None:
-    """Install an image on a server. WARNING: formats the target disk."""
-    confirm_action(
-        f"Install image {image_id} on server {server_id}? The target disk will be formatted.",
-        yes=yes,
-        non_interactive_error="Image install requires --yes for non-interactive use.",
-    )
-    body: dict = {"imageId": image_id}
-    if disk_id:
-        body["diskId"] = disk_id
-    if hostname:
-        body["hostname"] = hostname
-    client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/image/install", json_body=body)
+    result = client.request("GET", f"/servers/{_q(server_id)}/imageflavours")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @server_image_group.command("install-user")
 @click.argument("server_id")
-@click.option("--image-id", required=True, help="ID of the user image to install.")
-@click.option("--disk-id", default=None)
+@click.option("--image-key", required=True, help="Key/ID of the user image to install.")
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def image_install_user(ctx: click.Context, server_id: str, image_id: str, disk_id: str | None, yes: bool) -> None:
+def image_install_user(ctx: click.Context, server_id: str, image_key: str, yes: bool) -> None:
     """Install a user-provided image on a server. WARNING: formats the target disk."""
     confirm_action(
-        f"Install user image {image_id} on server {server_id}? The target disk will be formatted.",
+        f"Install user image {image_key} on server {server_id}? The target disk will be formatted.",
         yes=yes,
         non_interactive_error="User image install requires --yes for non-interactive use.",
     )
-    body: dict = {"imageId": image_id}
-    if disk_id:
-        body["diskId"] = disk_id
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/image/install-user", json_body=body)
+    result = client.request("POST", f"/servers/{_q(server_id)}/user-image", json_body={"key": image_key})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -93,32 +65,34 @@ def iso_get(ctx: click.Context, server_id: str) -> None:
 
 @server_iso_group.command("attach")
 @click.argument("server_id")
-@click.option("--iso-id", required=True)
+@click.option("--iso-key", required=True, help="ISO key (from 'servers iso list-available').")
 @click.pass_context
-def iso_attach(ctx: click.Context, server_id: str, iso_id: str) -> None:
+def iso_attach(ctx: click.Context, server_id: str, iso_key: str) -> None:
     """Attach an ISO to a server."""
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/iso/attach", json_body={"isoId": iso_id})
+    result = client.request("POST", f"/servers/{_q(server_id)}/iso", json_body={"key": iso_key})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @server_iso_group.command("detach")
 @click.argument("server_id")
+@click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def iso_detach(ctx: click.Context, server_id: str) -> None:
+def iso_detach(ctx: click.Context, server_id: str, yes: bool) -> None:
     """Detach the current ISO from a server."""
+    confirm_action(f"Detach ISO from server {server_id}?", yes=yes)
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/iso/detach")
+    result = client.request("DELETE", f"/servers/{_q(server_id)}/iso")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
-@server_iso_group.command("available")
+@server_iso_group.command("list-available")
 @click.argument("server_id")
 @click.pass_context
 def iso_available(ctx: click.Context, server_id: str) -> None:
     """List available ISOs for a server."""
     client = build_client()
-    result = client.request("GET", f"/servers/{_q(server_id)}/iso/available")
+    result = client.request("GET", f"/servers/{_q(server_id)}/isoimages")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -210,10 +184,9 @@ def snapshots_revert(ctx: click.Context, server_id: str, snapshot_id: str, yes: 
 
 @server_snapshots_group.command("dry-run")
 @click.argument("server_id")
-@click.argument("snapshot_id")
 @click.pass_context
-def snapshots_dry_run(ctx: click.Context, server_id: str, snapshot_id: str) -> None:
-    """Dry-run a snapshot revert to check compatibility."""
+def snapshots_dry_run(ctx: click.Context, server_id: str) -> None:
+    """Dry-run snapshot creation to check compatibility."""
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/snapshots/{_q(snapshot_id)}/revert/dry-run")
+    result = client.request("POST", f"/servers/{_q(server_id)}/snapshots:dryrun")
     print_result(result, as_json=ctx.obj.get("json", False))

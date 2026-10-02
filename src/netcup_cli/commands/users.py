@@ -43,7 +43,7 @@ def users_update(ctx: click.Context, user_id: str | None, body_file: str) -> Non
     """Update user details."""
     body = json.loads(open(body_file).read())
     client = build_client()
-    result = client.request("PATCH", f"/users/{_uid(user_id)}", json_body=body)
+    result = client.request("PUT", f"/users/{_uid(user_id)}", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -129,24 +129,24 @@ def failover_ipv4() -> None:
 def failover_ipv4_list(ctx: click.Context, user_id: str | None) -> None:
     """List IPv4 failover IPs."""
     client = build_client()
-    result = client.request("GET", f"/users/{_uid(user_id)}/failover-ips/ipv4")
+    result = client.request("GET", f"/users/{_uid(user_id)}/failoverips/v4")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @failover_ipv4.command("route")
 @click.argument("user_id", required=False, default=None)
-@click.argument("ip")
+@click.argument("failover_ip_id")
 @click.option("--server-id", required=True, help="Target server ID to route to.")
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def failover_ipv4_route(ctx: click.Context, user_id: str | None, ip: str, server_id: str, yes: bool) -> None:
+def failover_ipv4_route(ctx: click.Context, user_id: str | None, failover_ip_id: str, server_id: str, yes: bool) -> None:
     """Route an IPv4 failover IP to a server."""
     confirm_action(
-        f"Route failover IP {ip} to server {server_id}? This may disrupt connectivity.",
+        f"Route failover IP {failover_ip_id} to server {server_id}? This may disrupt connectivity.",
         yes=yes,
     )
     client = build_client()
-    result = client.request("POST", f"/users/{_uid(user_id)}/failover-ips/ipv4/{_q(ip)}/route", json_body={"serverId": server_id})
+    result = client.request("PATCH", f"/users/{_uid(user_id)}/failoverips/v4/{_q(failover_ip_id)}", json_body={"serverId": server_id}, merge_patch=True)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -161,24 +161,24 @@ def failover_ipv6() -> None:
 def failover_ipv6_list(ctx: click.Context, user_id: str | None) -> None:
     """List IPv6 failover IPs."""
     client = build_client()
-    result = client.request("GET", f"/users/{_uid(user_id)}/failover-ips/ipv6")
+    result = client.request("GET", f"/users/{_uid(user_id)}/failoverips/v6")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @failover_ipv6.command("route")
 @click.argument("user_id", required=False, default=None)
-@click.argument("ip")
+@click.argument("failover_ip_id")
 @click.option("--server-id", required=True)
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def failover_ipv6_route(ctx: click.Context, user_id: str | None, ip: str, server_id: str, yes: bool) -> None:
+def failover_ipv6_route(ctx: click.Context, user_id: str | None, failover_ip_id: str, server_id: str, yes: bool) -> None:
     """Route an IPv6 failover IP to a server."""
     confirm_action(
-        f"Route failover IP {ip} to server {server_id}? This may disrupt connectivity.",
+        f"Route failover IP {failover_ip_id} to server {server_id}? This may disrupt connectivity.",
         yes=yes,
     )
     client = build_client()
-    result = client.request("POST", f"/users/{_uid(user_id)}/failover-ips/ipv6/{_q(ip)}/route", json_body={"serverId": server_id})
+    result = client.request("PATCH", f"/users/{_uid(user_id)}/failoverips/v6/{_q(failover_ip_id)}", json_body={"serverId": server_id}, merge_patch=True)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -287,35 +287,36 @@ def user_images_get(ctx: click.Context, user_id: str | None, image_id: str) -> N
 @click.option("--multipart/--single", default=True, show_default=True)
 @click.pass_context
 def user_images_prepare_upload(ctx: click.Context, user_id: str | None, key: str, multipart: bool) -> None:
-    """Prepare an image upload."""
+    """Prepare an image upload (returns upload ID for multipart)."""
     client = build_client()
-    result = client.request("POST", f"/users/{_uid(user_id)}/images/prepare-upload", json_body={"key": key, "multipart": multipart})
+    result = client.request("POST", f"/users/{_uid(user_id)}/images/{_q(key)}", json_body={"multipart": multipart})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @users_images.command("get-part-url")
 @click.argument("user_id", required=False, default=None)
+@click.option("--key", required=True, help="Image key.")
 @click.option("--upload-id", required=True)
 @click.option("--part-number", type=int, required=True)
 @click.pass_context
-def user_images_get_part_url(ctx: click.Context, user_id: str | None, upload_id: str, part_number: int) -> None:
+def user_images_get_part_url(ctx: click.Context, user_id: str | None, key: str, upload_id: str, part_number: int) -> None:
     """Get a presigned URL for an image upload part."""
     client = build_client()
-    result = client.request("GET", f"/users/{_uid(user_id)}/images/get-part-url", params={"uploadId": upload_id, "partNumber": part_number})
+    result = client.request("GET", f"/users/{_uid(user_id)}/images/{_q(key)}/{_q(upload_id)}/parts/{part_number}")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @users_images.command("complete-upload")
 @click.argument("user_id", required=False, default=None)
+@click.option("--key", required=True, help="Image key.")
 @click.option("--upload-id", required=True)
 @click.option("--body-file", type=click.Path(exists=True), required=True, help="JSON file with parts/ETags list.")
 @click.pass_context
-def user_images_complete_upload(ctx: click.Context, user_id: str | None, upload_id: str, body_file: str) -> None:
+def user_images_complete_upload(ctx: click.Context, user_id: str | None, key: str, upload_id: str, body_file: str) -> None:
     """Complete a multipart image upload."""
     body = json.loads(open(body_file).read())
-    body["uploadId"] = upload_id
     client = build_client()
-    result = client.request("POST", f"/users/{_uid(user_id)}/images/complete-upload", json_body=body)
+    result = client.request("PUT", f"/users/{_uid(user_id)}/images/{_q(key)}/{_q(upload_id)}", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -383,35 +384,36 @@ def user_isos_get(ctx: click.Context, user_id: str | None, iso_id: str) -> None:
 @click.option("--multipart/--single", default=True, show_default=True)
 @click.pass_context
 def user_isos_prepare_upload(ctx: click.Context, user_id: str | None, key: str, multipart: bool) -> None:
-    """Prepare an ISO upload."""
+    """Prepare an ISO upload (returns upload ID for multipart)."""
     client = build_client()
-    result = client.request("POST", f"/users/{_uid(user_id)}/isos/prepare-upload", json_body={"key": key, "multipart": multipart})
+    result = client.request("POST", f"/users/{_uid(user_id)}/isos/{_q(key)}", json_body={"multipart": multipart})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @users_isos.command("get-part-url")
 @click.argument("user_id", required=False, default=None)
+@click.option("--key", required=True, help="ISO key.")
 @click.option("--upload-id", required=True)
 @click.option("--part-number", type=int, required=True)
 @click.pass_context
-def user_isos_get_part_url(ctx: click.Context, user_id: str | None, upload_id: str, part_number: int) -> None:
+def user_isos_get_part_url(ctx: click.Context, user_id: str | None, key: str, upload_id: str, part_number: int) -> None:
     """Get a presigned URL for an ISO upload part."""
     client = build_client()
-    result = client.request("GET", f"/users/{_uid(user_id)}/isos/get-part-url", params={"uploadId": upload_id, "partNumber": part_number})
+    result = client.request("GET", f"/users/{_uid(user_id)}/isos/{_q(key)}/{_q(upload_id)}/parts/{part_number}")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
 @users_isos.command("complete-upload")
 @click.argument("user_id", required=False, default=None)
+@click.option("--key", required=True, help="ISO key.")
 @click.option("--upload-id", required=True)
 @click.option("--body-file", type=click.Path(exists=True), required=True)
 @click.pass_context
-def user_isos_complete_upload(ctx: click.Context, user_id: str | None, upload_id: str, body_file: str) -> None:
+def user_isos_complete_upload(ctx: click.Context, user_id: str | None, key: str, upload_id: str, body_file: str) -> None:
     """Complete a multipart ISO upload."""
     body = json.loads(open(body_file).read())
-    body["uploadId"] = upload_id
     client = build_client()
-    result = client.request("POST", f"/users/{_uid(user_id)}/isos/complete-upload", json_body=body)
+    result = client.request("PUT", f"/users/{_uid(user_id)}/isos/{_q(key)}/{_q(upload_id)}", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -487,5 +489,5 @@ def user_vlans_update(ctx: click.Context, user_id: str | None, vlan_id: str, bod
     )
     body = json.loads(open(body_file).read())
     client = build_client()
-    result = client.request("PATCH", f"/users/{_uid(user_id)}/vlans/{_q(vlan_id)}", json_body=body)
+    result = client.request("PUT", f"/users/{_uid(user_id)}/vlans/{_q(vlan_id)}", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))

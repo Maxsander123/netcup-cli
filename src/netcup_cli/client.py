@@ -32,15 +32,21 @@ class SCPClient:
         *,
         params: Mapping[str, object] | None = None,
         json_body: object | None = None,
+        merge_patch: bool = False,
     ) -> object | None:
+        import json as _json
         url = f"{SCP_BASE}{_API_PREFIX}{path}"
+        headers = self._headers()
+        if merge_patch:
+            headers["Content-Type"] = "application/merge-patch+json"
         try:
             resp = requests.request(
                 method.upper(),
                 url,
-                headers=self._headers(),
+                headers=headers,
                 params=params,
-                json=json_body,
+                data=_json.dumps(json_body) if merge_patch and json_body is not None else None,
+                json=json_body if not merge_patch else None,
                 timeout=_TIMEOUT,
             )
         except requests.Timeout:

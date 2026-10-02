@@ -134,7 +134,7 @@ def iface_fw_reapply(ctx: click.Context, server_id: str, interface_id: str, yes:
         yes=yes,
     )
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}/firewall/reapply")
+    result = client.request("POST", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}/firewall:reapply")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -151,7 +151,7 @@ def iface_fw_restore_policies(ctx: click.Context, server_id: str, interface_id: 
         non_interactive_error="Policy restore requires --yes for non-interactive use.",
     )
     client = build_client()
-    result = client.request("POST", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}/firewall/restore-copied-policies")
+    result = client.request("POST", f"/servers/{_q(server_id)}/interfaces/{_q(interface_id)}/firewall:restore-copied-policies")
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -177,12 +177,12 @@ def rdns_ipv4_get(ctx: click.Context, ip: str) -> None:
 
 @rdns_ipv4.command("set")
 @click.argument("ip")
-@click.option("--hostname", required=True)
+@click.option("--hostname", "rdns", required=True, help="Reverse DNS hostname to set.")
 @click.pass_context
-def rdns_ipv4_set(ctx: click.Context, ip: str, hostname: str) -> None:
+def rdns_ipv4_set(ctx: click.Context, ip: str, rdns: str) -> None:
     """Set rDNS for an IPv4 address."""
     client = build_client()
-    result = client.request("PUT", f"/rdns/ipv4/{_q(ip)}", json_body={"hostname": hostname})
+    result = client.request("POST", "/rdns/ipv4", json_body={"ip": ip, "rdns": rdns})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -213,12 +213,12 @@ def rdns_ipv6_get(ctx: click.Context, ip: str) -> None:
 
 @rdns_ipv6.command("set")
 @click.argument("ip")
-@click.option("--hostname", required=True)
+@click.option("--hostname", "rdns", required=True, help="Reverse DNS hostname to set.")
 @click.pass_context
-def rdns_ipv6_set(ctx: click.Context, ip: str, hostname: str) -> None:
+def rdns_ipv6_set(ctx: click.Context, ip: str, rdns: str) -> None:
     """Set rDNS for an IPv6 address."""
     client = build_client()
-    result = client.request("PUT", f"/rdns/ipv6/{_q(ip)}", json_body={"hostname": hostname})
+    result = client.request("POST", "/rdns/ipv6", json_body={"ip": ip, "rdns": rdns})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 

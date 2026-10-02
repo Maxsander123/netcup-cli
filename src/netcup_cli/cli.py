@@ -122,7 +122,7 @@ def cmd_start(ctx: click.Context, server: str, yes: bool) -> None:
     client = build_client()
     server_id = _resolve(client, server)
     confirm_action(f"Start server {server} ({server_id})?", yes=yes)
-    result = client.request("POST", f"/servers/{_q(server_id)}/power", json_body={"action": "START"})
+    result = client.request("PATCH", f"/servers/{_q(server_id)}", json_body={"state": "ON"}, merge_patch=True)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -135,7 +135,7 @@ def cmd_stop(ctx: click.Context, server: str, yes: bool) -> None:
     client = build_client()
     server_id = _resolve(client, server)
     confirm_action(f"Stop server {server} ({server_id})?", yes=yes)
-    result = client.request("POST", f"/servers/{_q(server_id)}/power", json_body={"action": "STOP"})
+    result = client.request("PATCH", f"/servers/{_q(server_id)}", json_body={"state": "OFF"}, merge_patch=True)
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -148,7 +148,13 @@ def cmd_reset(ctx: click.Context, server: str, yes: bool) -> None:
     client = build_client()
     server_id = _resolve(client, server)
     confirm_action(f"Hard-reset server {server} ({server_id})? This interrupts the server.", yes=yes)
-    result = client.request("POST", f"/servers/{_q(server_id)}/power", json_body={"action": "HARD_REBOOT"})
+    result = client.request(
+        "PATCH",
+        f"/servers/{_q(server_id)}",
+        params={"stateOption": "RESET"},
+        json_body={"state": "ON"},
+        merge_patch=True,
+    )
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -288,24 +294,7 @@ def cmd_images(ctx: click.Context, server: str | None, show_deprecated: bool) ->
         server_id = str(items_s[0]["id"])
         label = items_s[0].get("nickname") or items_s[0].get("hostname") or server_id
 
-    # Try known paths — the actual path depends on the SCP API version
-    result = None
-    last_err: Exception | None = None
-    for candidate in (
-        f"/servers/{_q(server_id)}/image/flavours",
-        f"/servers/{_q(server_id)}/images/flavours",
-        f"/servers/{_q(server_id)}/images",
-    ):
-        try:
-            result = client.request("GET", candidate)
-            break
-        except CLIError as exc:
-            last_err = exc
-    if result is None:
-        raise CLIError(
-            f"Could not fetch images ({last_err}).\n"
-            f"Tip: browse https://www.servercontrolpanel.de/scp-ui/servers/{server_id}/media/images"
-        )
+    result = client.request("GET", f"/servers/{_q(server_id)}/imageflavours")
     if ctx.obj.get("json"):
         click.echo(_json.dumps(result, indent=2, default=str))
         return
@@ -318,20 +307,15 @@ def cmd_images(ctx: click.Context, server: str | None, show_deprecated: bool) ->
     t = Table(box=rbox.ROUNDED, title=f"OS Images — {label}")
     t.add_column("ID", style="cyan", no_wrap=True)
     t.add_column("Name", style="bold")
-    t.add_column("Method")
-    t.add_column("Arch")
-    if show_deprecated:
-        t.add_column("Deprecated", style="dim")
+    t.add_column("Alias")
+    t.add_column("Description")
     for img in items:
-        row = [
+        t.add_row(
             str(img.get("id", "")),
             img.get("name") or "—",
-            img.get("installationMethod") or "—",
-            img.get("architecture") or "—",
-        ]
-        if show_deprecated:
-            row.append("yes" if img.get("deprecated") else "")
-        t.add_row(*row)
+            img.get("alias") or "—",
+            (img.get("text") or "")[:60],
+        )
     console.print(t)
     console.print(f"[dim]{len(items)} image(s)[/dim]")
 
@@ -383,18 +367,17 @@ def cmd_install(
 
     # ── Interactive image picker if --image not given ─────────────────────────
     if not image_id:
-        result = client.request("GET", f"/servers/{_q(server_id)}/image/flavours")
+        result = client.request("GET", f"/servers/{_q(server_id)}/imageflavours")
         items: list[dict] = result if isinstance(result, list) else (result or {}).get("data", [])  # type: ignore[union-attr]
-        items = [i for i in items if not i.get("deprecated")]
         if not items:
             raise CLIError("No images available for this server.")
         t = Table(box=rbox.ROUNDED, title=f"Available OS Images — {server}")
         t.add_column("#", style="dim")
         t.add_column("ID", style="cyan", no_wrap=True)
         t.add_column("Name", style="bold")
-        t.add_column("Method")
+        t.add_column("Alias")
         for idx, img in enumerate(items, 1):
-            t.add_row(str(idx), str(img.get("id", "")), img.get("name") or "—", img.get("installationMethod") or "—")
+            t.add_row(str(idx), str(img.get("id", "")), img.get("name") or "—", img.get("alias") or "—")
         console.print(t)
         raw = click.prompt("Select image number")
         if not raw.isdigit() or not (1 <= int(raw) <= len(items)):
@@ -439,8 +422,8 @@ def cmd_install(
         if len(script_content) > 10000:
             raise CLIError("Custom script exceeds 10,000 character limit.")
 
-    # ── Build request body ────────────────────────────────────────────────────
-    body: dict = {"imageId": image_id}
+    # ── Build request body (real API field names) ─────────────────────────────
+    body: dict = {"imageFlavourId": int(image_id)}
     if hostname:
         body["hostname"] = hostname
     if locale:
@@ -448,28 +431,27 @@ def cmd_install(
     if timezone:
         body["timezone"] = timezone
     if partitioning:
-        body["partitioning"] = partitioning
+        body["rootPartitionFullDiskSize"] = (partitioning.lower() in ("full", "true", "1"))
     if username:
-        body["createAdditionalUser"] = True
-        body["username"] = username
+        body["additionalUserUsername"] = username
     if password:
-        body["userPassword"] = password
+        body["additionalUserPassword"] = password
     if ssh_key_ids:
-        body["sshKeyIds"] = list(ssh_key_ids)
+        body["sshKeyIds"] = [int(k) for k in ssh_key_ids]
     body["sshPasswordAuthentication"] = not no_ssh_password
     if script_content:
         body["customScript"] = script_content
-    body["sendEmail"] = send_email
+    body["emailToExecutingUser"] = send_email
 
     # ── Summary + confirmation ────────────────────────────────────────────────
     console.print(f"\n[bold yellow]Install summary for {server} ({server_id}):[/bold yellow]")
-    console.print(f"  Image:    {image_id}")
-    console.print(f"  Hostname: {hostname}")
-    console.print(f"  Locale:   {locale}  /  Timezone: {timezone}")
+    console.print(f"  Image ID:  {image_id}")
+    console.print(f"  Hostname:  {hostname}")
+    console.print(f"  Locale:    {locale}  /  Timezone: {timezone}")
     if username:
-        console.print(f"  User:     {username}")
+        console.print(f"  User:      {username}")
     if ssh_key_ids:
-        console.print(f"  SSH keys: {', '.join(ssh_key_ids)}")
+        console.print(f"  SSH keys:  {', '.join(ssh_key_ids)}")
     console.print(f"  SSH password auth: {'disabled' if no_ssh_password else 'enabled'}")
     if script_content:
         console.print(f"  Custom script: {len(script_content)} chars")
@@ -479,7 +461,7 @@ def cmd_install(
         yes=yes,
     )
 
-    result = client.request("POST", f"/servers/{_q(server_id)}/image/install", json_body=body)
+    result = client.request("POST", f"/servers/{_q(server_id)}/image", json_body=body)
     print_result(result, as_json=ctx.obj.get("json", False))
     console.print("[green]✓[/green] Install started.")
 

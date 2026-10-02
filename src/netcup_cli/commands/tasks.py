@@ -59,5 +59,5 @@ def tasks_cancel(ctx: click.Context, task_id: str, yes: bool) -> None:
         non_interactive_error="Task cancel requires --yes for non-interactive use.",
     )
     client = build_client()
-    result = client.request("POST", f"/tasks/{_q(task_id)}/cancel")
+    result = client.request("PUT", f"/tasks/{_q(task_id)}:cancel")
     print_result(result, as_json=ctx.obj.get("json", False))
