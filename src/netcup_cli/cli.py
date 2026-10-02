@@ -10,6 +10,9 @@ from netcup_cli.client import SCPClient, build_client
 from netcup_cli.config import Credentials, delete_credentials, load_credentials, save_credentials
 from netcup_cli.errors import CLIError
 from netcup_cli.output import console, print_result, print_server, print_servers
+
+import shutil
+import subprocess as _subprocess
 from netcup_cli.safety import confirm_action
 
 # Advanced subgroups
@@ -147,6 +150,37 @@ def cmd_reset(ctx: click.Context, server: str, yes: bool) -> None:
     confirm_action(f"Hard-reset server {server} ({server_id})? This interrupts the server.", yes=yes)
     result = client.request("POST", f"/servers/{_q(server_id)}/power", json_body={"action": "HARD_REBOOT"})
     print_result(result, as_json=ctx.obj.get("json", False))
+
+
+# ── vnc ───────────────────────────────────────────────────────────────────────
+
+_VNC_BASE = "https://www.servercontrolpanel.de/scp-ui/servers"
+
+
+def _open_browser(url: str) -> None:
+    for opener in ("xdg-open", "sensible-browser", "x-www-browser", "firefox", "chromium-browser", "google-chrome"):
+        if shutil.which(opener):
+            _subprocess.Popen([opener, url], stdout=_subprocess.DEVNULL, stderr=_subprocess.DEVNULL)
+            return
+    console.print(f"[yellow]No browser found. Open manually:[/yellow]\n  {url}")
+
+
+@cli.command("vnc")
+@click.argument("server")
+@click.option("--url-only", is_flag=True, help="Print the URL instead of opening the browser.")
+@click.pass_context
+def cmd_vnc(ctx: click.Context, server: str, url_only: bool) -> None:
+    """Open the VNC/serial console for a server in the browser."""
+    client = build_client()
+    server_id = _resolve(client, server)
+    url = f"{_VNC_BASE}/{server_id}/screen"
+    if url_only:
+        click.echo(url)
+        return
+    console.print(f"Opening VNC console for [bold]{server}[/bold] ({server_id}) ...")
+    console.print(f"[dim]{url}[/dim]")
+    console.print("[dim]Log in to servercontrolpanel.de in the browser if prompted.[/dim]")
+    _open_browser(url)
 
 
 # ── snapshot subgroup ─────────────────────────────────────────────────────────
