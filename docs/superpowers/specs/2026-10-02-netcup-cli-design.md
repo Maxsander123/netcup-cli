@@ -1,6 +1,6 @@
 # Netcup CLI port design
 
-**Status:** Draft for review<br>
+**Status:** Approved by user<br>
 **Date:** 2026-10-02
 
 ## Goal
