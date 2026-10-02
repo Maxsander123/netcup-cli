@@ -62,12 +62,14 @@ def print_server(data: dict, *, as_json: bool = False) -> None:
     if as_json:
         print(json.dumps(data, indent=2, default=str))
         return
-    t = Table(box=box.SIMPLE, show_header=False)
+
+    # ── General info ──────────────────────────────────────────────────────────
+    t = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
     t.add_column("Key", style="bold", no_wrap=True)
     t.add_column("Value")
 
     def _row(key: str, val: object) -> None:
-        if val is None or val == "" or val == {}:
+        if val is None or val == "" or val == {} or val == []:
             return
         if isinstance(val, (dict, list)):
             t.add_row(key, json.dumps(val, ensure_ascii=False))
@@ -83,29 +85,18 @@ def print_server(data: dict, *, as_json: bool = False) -> None:
     elif tmpl:
         _row("Template", tmpl)
     _row("Disabled", data.get("disabled"))
+    _row("Site", (data.get("site") or {}).get("city"))
 
     live = data.get("serverLiveInfo") or {}
     _row("State", live.get("state"))
     _row("vCPUs", live.get("cpuCount"))
     mem = live.get("currentServerMemoryInMiB")
-    _row("Memory", f"{mem} MiB" if mem else None)
+    _row("Memory", f"{mem} MiB ({mem // 1024} GiB)" if mem else None)
 
-    ifaces = live.get("interfaces") or []
-    for i, iface in enumerate(ifaces):
-        prefix = f"Interface {i}"
-        _row(f"{prefix} MAC", iface.get("mac"))
-        for addr in iface.get("ipAddresses") or []:
-            _row(f"{prefix} IP", addr.get("ip"))
-        for pfx in iface.get("ipv6NetworkPrefixes") or []:
-            _row(f"{prefix} IPv6", pfx)
-
-    disks = live.get("disks") or []
-    for i, disk in enumerate(disks):
-        _row(f"Disk {i} ID", disk.get("id"))
+    # Disks
+    for i, disk in enumerate(live.get("disks") or []):
         cap = disk.get("capacityInMiB")
-        _row(f"Disk {i} Size", f"{cap} MiB ({cap // 1024} GiB)" if cap else None)
-
-    _row("Site", (data.get("site") or {}).get("city"))
+        _row(f"Disk {i}", f"{disk.get('id')}  {cap} MiB ({cap // 1024} GiB)" if cap else str(disk.get("id")))
 
     # Remaining top-level fields not already shown
     shown = {"id", "nickname", "hostname", "template", "disabled", "serverLiveInfo", "site"}
@@ -114,6 +105,33 @@ def print_server(data: dict, *, as_json: bool = False) -> None:
             _row(k, v)
 
     console.print(t)
+
+    # ── Interfaces ────────────────────────────────────────────────────────────
+    ifaces = live.get("interfaces") or []
+    if ifaces:
+        console.print()
+        iface_t = Table(box=box.ROUNDED, title="Interfaces")
+        iface_t.add_column("#", style="dim", no_wrap=True)
+        iface_t.add_column("MAC", style="cyan", no_wrap=True)
+        iface_t.add_column("IPv4")
+        iface_t.add_column("IPv6 Prefix")
+        iface_t.add_column("VLAN")
+        iface_t.add_column("RX / TX (month)")
+
+        for idx, iface in enumerate(ifaces):
+            mac = iface.get("mac") or "—"
+            ips = [a.get("ip", "") for a in (iface.get("ipAddresses") or []) if a.get("ip")]
+            ipv4 = "\n".join(ips) if ips else "—"
+            ipv6_prefixes = iface.get("ipv6NetworkPrefixes") or []
+            ipv6 = "\n".join(ipv6_prefixes) if ipv6_prefixes else "—"
+            vlan_id = iface.get("vlanId")
+            vlan = str(vlan_id) if vlan_id else ("VLAN" if iface.get("vlanInterface") else "—")
+            rx = iface.get("rxMonthlyInMiB", 0) or 0
+            tx = iface.get("txMonthlyInMiB", 0) or 0
+            traffic = f"{rx / 1024:.1f} GiB / {tx / 1024:.1f} GiB"
+            iface_t.add_row(str(idx), mac, ipv4, ipv6, vlan, traffic)
+
+        console.print(iface_t)
 
 
 def _print_table(rows: list[dict]) -> None:
