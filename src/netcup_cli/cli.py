@@ -408,23 +408,23 @@ def cmd_install(
 
     # ── Prompt for missing common options ─────────────────────────────────────
     if not hostname:
-        hostname = click.prompt("Hostname", default=server)
+        hostname = server if yes else click.prompt("Hostname", default=server)
     if not locale:
-        locale = click.prompt("Locale", default="en_US.UTF-8")
+        locale = "en_US.UTF-8" if yes else click.prompt("Locale", default="en_US.UTF-8")
     if not timezone:
-        timezone = click.prompt("Timezone", default="Europe/Berlin")
+        timezone = "Europe/Berlin" if yes else click.prompt("Timezone", default="Europe/Berlin")
 
     # ── Optional user creation ────────────────────────────────────────────────
-    if not username:
+    if not username and not yes:
         create_user = click.confirm("Create additional user?", default=False)
         if create_user:
             username = click.prompt("Username")
 
-    if username and not password:
+    if username and not password and not yes:
         password = _getpass.getpass(f"Password for '{username}': ")
 
     # ── SSH key picker if none given ──────────────────────────────────────────
-    if not ssh_key_ids:
+    if not ssh_key_ids and not yes:
         keys_result = client.request("GET", "/users/me/ssh-keys")
         keys: list[dict] = keys_result if isinstance(keys_result, list) else (keys_result or {}).get("data", [])  # type: ignore[union-attr]
         if keys:
