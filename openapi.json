@@ -1,0 +1,249 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Netcup Server Control Panel API",
+    "version": "2026.0923.125530",
+    "description": "REST API for Netcup Server Control Panel (SCP). This snapshot was pinned at version 2026.0923.125530 and contains 87 operations across 11 tags."
+  },
+  "servers": [
+    {
+      "url": "https://www.servercontrolpanel.de/scp-core/api/v1"
+    }
+  ],
+  "tags": [
+    {"name": "API"},
+    {"name": "Authentication"},
+    {"name": "Maintenance"},
+    {"name": "RDNS"},
+    {"name": "Servers"},
+    {"name": "Disks"},
+    {"name": "Images"},
+    {"name": "Networking"},
+    {"name": "Snapshots"},
+    {"name": "Tasks"},
+    {"name": "Users"}
+  ],
+  "paths": {
+    "/ping": {
+      "get": {"operationId": "api_ping", "tags": ["API"], "summary": "Ping the API"}
+    },
+    "/openapi.json": {
+      "get": {"operationId": "api_openapi_get", "tags": ["API"], "summary": "Get OpenAPI schema"}
+    },
+    "/maintenance": {
+      "get": {"operationId": "maintenance_info", "tags": ["Maintenance"], "summary": "Get maintenance info (deprecated)", "deprecated": true}
+    },
+    "/rdns/ipv4/{ip}": {
+      "get": {"operationId": "rdns_ipv4_get", "tags": ["RDNS"], "summary": "Get IPv4 rDNS"},
+      "put": {"operationId": "rdns_ipv4_set", "tags": ["RDNS"], "summary": "Set IPv4 rDNS"},
+      "delete": {"operationId": "rdns_ipv4_delete", "tags": ["RDNS"], "summary": "Delete IPv4 rDNS"}
+    },
+    "/rdns/ipv6/{ip}": {
+      "get": {"operationId": "rdns_ipv6_get", "tags": ["RDNS"], "summary": "Get IPv6 rDNS"},
+      "put": {"operationId": "rdns_ipv6_set", "tags": ["RDNS"], "summary": "Set IPv6 rDNS"},
+      "delete": {"operationId": "rdns_ipv6_delete", "tags": ["RDNS"], "summary": "Delete IPv6 rDNS"}
+    },
+    "/servers": {
+      "get": {"operationId": "servers_list", "tags": ["Servers"], "summary": "List servers"}
+    },
+    "/servers/{serverId}": {
+      "get": {"operationId": "servers_get", "tags": ["Servers"], "summary": "Get server"},
+      "patch": {"operationId": "servers_update", "tags": ["Servers"], "summary": "Update server"}
+    },
+    "/servers/{serverId}/power": {
+      "post": {"operationId": "servers_power", "tags": ["Servers"], "summary": "Change server power state"}
+    },
+    "/servers/{serverId}/gpu-driver": {
+      "get": {"operationId": "servers_gpu_driver", "tags": ["Servers"], "summary": "Get GPU driver info"}
+    },
+    "/servers/{serverId}/guest-agent": {
+      "get": {"operationId": "servers_guest_agent_get", "tags": ["Servers"], "summary": "Get guest agent config"}
+    },
+    "/servers/{serverId}/guest-agent/status": {
+      "get": {"operationId": "servers_guest_agent_status", "tags": ["Servers"], "summary": "Get guest agent status"}
+    },
+    "/servers/{serverId}/logs": {
+      "get": {"operationId": "servers_logs_list", "tags": ["Servers"], "summary": "List server logs"}
+    },
+    "/servers/{serverId}/rescue": {
+      "get": {"operationId": "servers_rescue_get", "tags": ["Servers"], "summary": "Get rescue config"}
+    },
+    "/servers/{serverId}/rescue/activate": {
+      "post": {"operationId": "servers_rescue_activate", "tags": ["Servers"], "summary": "Activate rescue mode"}
+    },
+    "/servers/{serverId}/rescue/deactivate": {
+      "post": {"operationId": "servers_rescue_deactivate", "tags": ["Servers"], "summary": "Deactivate rescue mode"}
+    },
+    "/servers/{serverId}/storage/optimize": {
+      "post": {"operationId": "servers_storage_optimize", "tags": ["Servers"], "summary": "Optimize server storage"}
+    },
+    "/servers/{serverId}/disks": {
+      "get": {"operationId": "servers_disks_list", "tags": ["Disks"], "summary": "List server disks"}
+    },
+    "/servers/{serverId}/disks/supported-drivers": {
+      "get": {"operationId": "servers_disks_supported_drivers", "tags": ["Disks"], "summary": "List supported disk drivers"}
+    },
+    "/servers/{serverId}/disks/{diskId}": {
+      "get": {"operationId": "servers_disks_get", "tags": ["Disks"], "summary": "Get a disk"},
+      "patch": {"operationId": "servers_disks_update", "tags": ["Disks"], "summary": "Update a disk"}
+    },
+    "/servers/{serverId}/disks/{diskId}/format": {
+      "post": {"operationId": "servers_disks_format", "tags": ["Disks"], "summary": "Format a disk"}
+    },
+    "/servers/{serverId}/image/flavours": {
+      "get": {"operationId": "servers_image_flavours", "tags": ["Images"], "summary": "List image flavours"}
+    },
+    "/servers/{serverId}/image/install": {
+      "post": {"operationId": "servers_image_install", "tags": ["Images"], "summary": "Install an image"}
+    },
+    "/servers/{serverId}/image/install-user": {
+      "post": {"operationId": "servers_image_install_user", "tags": ["Images"], "summary": "Install a user image"}
+    },
+    "/servers/{serverId}/iso": {
+      "get": {"operationId": "servers_iso_get", "tags": ["Images"], "summary": "Get attached ISO"}
+    },
+    "/servers/{serverId}/iso/attach": {
+      "post": {"operationId": "servers_iso_attach", "tags": ["Images"], "summary": "Attach an ISO"}
+    },
+    "/servers/{serverId}/iso/detach": {
+      "post": {"operationId": "servers_iso_detach", "tags": ["Images"], "summary": "Detach ISO"}
+    },
+    "/servers/{serverId}/iso/available": {
+      "get": {"operationId": "servers_iso_available", "tags": ["Images"], "summary": "List available ISOs"}
+    },
+    "/servers/{serverId}/interfaces": {
+      "get": {"operationId": "servers_interfaces_list", "tags": ["Networking"], "summary": "List interfaces"},
+      "post": {"operationId": "servers_interfaces_create", "tags": ["Networking"], "summary": "Create interface"}
+    },
+    "/servers/{serverId}/interfaces/{interfaceId}": {
+      "get": {"operationId": "servers_interfaces_get", "tags": ["Networking"], "summary": "Get interface"},
+      "patch": {"operationId": "servers_interfaces_update", "tags": ["Networking"], "summary": "Update interface"},
+      "delete": {"operationId": "servers_interfaces_delete", "tags": ["Networking"], "summary": "Delete interface"}
+    },
+    "/servers/{serverId}/interfaces/{interfaceId}/firewall": {
+      "get": {"operationId": "servers_interfaces_firewall_get", "tags": ["Networking"], "summary": "Get interface firewall"},
+      "put": {"operationId": "servers_interfaces_firewall_update", "tags": ["Networking"], "summary": "Update interface firewall"}
+    },
+    "/servers/{serverId}/interfaces/{interfaceId}/firewall/reapply": {
+      "post": {"operationId": "servers_interfaces_firewall_reapply", "tags": ["Networking"], "summary": "Reapply firewall rules"}
+    },
+    "/servers/{serverId}/interfaces/{interfaceId}/firewall/restore-copied-policies": {
+      "post": {"operationId": "servers_interfaces_firewall_restore_policies", "tags": ["Networking"], "summary": "Restore copied firewall policies"}
+    },
+    "/servers/{serverId}/metrics/cpu": {
+      "get": {"operationId": "servers_metrics_cpu", "tags": ["Servers"], "summary": "Get CPU metrics"}
+    },
+    "/servers/{serverId}/metrics/disk": {
+      "get": {"operationId": "servers_metrics_disk", "tags": ["Servers"], "summary": "Get disk metrics"}
+    },
+    "/servers/{serverId}/metrics/network": {
+      "get": {"operationId": "servers_metrics_network", "tags": ["Servers"], "summary": "Get network metrics"}
+    },
+    "/servers/{serverId}/metrics/network-packets": {
+      "get": {"operationId": "servers_metrics_network_packets", "tags": ["Servers"], "summary": "Get network packet metrics"}
+    },
+    "/servers/{serverId}/snapshots": {
+      "get": {"operationId": "servers_snapshots_list", "tags": ["Snapshots"], "summary": "List snapshots"},
+      "post": {"operationId": "servers_snapshots_create", "tags": ["Snapshots"], "summary": "Create snapshot"}
+    },
+    "/servers/{serverId}/snapshots/{snapshotId}": {
+      "get": {"operationId": "servers_snapshots_get", "tags": ["Snapshots"], "summary": "Get snapshot"},
+      "delete": {"operationId": "servers_snapshots_delete", "tags": ["Snapshots"], "summary": "Delete snapshot"}
+    },
+    "/servers/{serverId}/snapshots/{snapshotId}/export": {
+      "post": {"operationId": "servers_snapshots_export", "tags": ["Snapshots"], "summary": "Export snapshot"}
+    },
+    "/servers/{serverId}/snapshots/{snapshotId}/revert": {
+      "post": {"operationId": "servers_snapshots_revert", "tags": ["Snapshots"], "summary": "Revert to snapshot"}
+    },
+    "/servers/{serverId}/snapshots/{snapshotId}/revert/dry-run": {
+      "post": {"operationId": "servers_snapshots_dry_run", "tags": ["Snapshots"], "summary": "Dry-run snapshot revert"}
+    },
+    "/tasks": {
+      "get": {"operationId": "tasks_list", "tags": ["Tasks"], "summary": "List tasks"}
+    },
+    "/tasks/{taskId}": {
+      "get": {"operationId": "tasks_get", "tags": ["Tasks"], "summary": "Get task"}
+    },
+    "/tasks/{taskId}/cancel": {
+      "post": {"operationId": "tasks_cancel", "tags": ["Tasks"], "summary": "Cancel task"}
+    },
+    "/users/{userId}": {
+      "get": {"operationId": "users_get", "tags": ["Users"], "summary": "Get user"},
+      "patch": {"operationId": "users_update", "tags": ["Users"], "summary": "Update user"}
+    },
+    "/users/{userId}/logs": {
+      "get": {"operationId": "users_logs_list", "tags": ["Users"], "summary": "List user logs"}
+    },
+    "/users/{userId}/ssh-keys": {
+      "get": {"operationId": "users_ssh_keys_list", "tags": ["Users"], "summary": "List SSH keys"},
+      "post": {"operationId": "users_ssh_keys_create", "tags": ["Users"], "summary": "Add SSH key"}
+    },
+    "/users/{userId}/ssh-keys/{keyId}": {
+      "delete": {"operationId": "users_ssh_keys_delete", "tags": ["Users"], "summary": "Delete SSH key"}
+    },
+    "/users/{userId}/failover-ips/ipv4": {
+      "get": {"operationId": "users_failover_ipv4_list", "tags": ["Users"], "summary": "List IPv4 failover IPs"}
+    },
+    "/users/{userId}/failover-ips/ipv4/{ip}/route": {
+      "post": {"operationId": "users_failover_ipv4_route", "tags": ["Users"], "summary": "Route IPv4 failover IP"}
+    },
+    "/users/{userId}/failover-ips/ipv6": {
+      "get": {"operationId": "users_failover_ipv6_list", "tags": ["Users"], "summary": "List IPv6 failover IPs"}
+    },
+    "/users/{userId}/failover-ips/ipv6/{ip}/route": {
+      "post": {"operationId": "users_failover_ipv6_route", "tags": ["Users"], "summary": "Route IPv6 failover IP"}
+    },
+    "/users/{userId}/firewall-policies": {
+      "get": {"operationId": "users_fw_policies_list", "tags": ["Users"], "summary": "List firewall policies"},
+      "post": {"operationId": "users_fw_policies_create", "tags": ["Users"], "summary": "Create firewall policy"}
+    },
+    "/users/{userId}/firewall-policies/{policyId}": {
+      "get": {"operationId": "users_fw_policies_get", "tags": ["Users"], "summary": "Get firewall policy"},
+      "put": {"operationId": "users_fw_policies_update", "tags": ["Users"], "summary": "Update firewall policy"},
+      "delete": {"operationId": "users_fw_policies_delete", "tags": ["Users"], "summary": "Delete firewall policy"}
+    },
+    "/users/{userId}/images": {
+      "get": {"operationId": "users_images_list", "tags": ["Users"], "summary": "List user images"}
+    },
+    "/users/{userId}/images/{imageId}": {
+      "get": {"operationId": "users_images_get", "tags": ["Users"], "summary": "Get user image"},
+      "delete": {"operationId": "users_images_delete", "tags": ["Users"], "summary": "Delete user image"}
+    },
+    "/users/{userId}/images/prepare-upload": {
+      "post": {"operationId": "users_images_prepare_upload", "tags": ["Users"], "summary": "Prepare image upload"}
+    },
+    "/users/{userId}/images/get-part-url": {
+      "get": {"operationId": "users_images_get_part_url", "tags": ["Users"], "summary": "Get image part URL"}
+    },
+    "/users/{userId}/images/complete-upload": {
+      "post": {"operationId": "users_images_complete_upload", "tags": ["Users"], "summary": "Complete image upload"}
+    },
+    "/users/{userId}/isos": {
+      "get": {"operationId": "users_isos_list", "tags": ["Users"], "summary": "List user ISOs"}
+    },
+    "/users/{userId}/isos/{isoId}": {
+      "get": {"operationId": "users_isos_get", "tags": ["Users"], "summary": "Get user ISO"},
+      "delete": {"operationId": "users_isos_delete", "tags": ["Users"], "summary": "Delete user ISO"}
+    },
+    "/users/{userId}/isos/prepare-upload": {
+      "post": {"operationId": "users_isos_prepare_upload", "tags": ["Users"], "summary": "Prepare ISO upload"}
+    },
+    "/users/{userId}/isos/get-part-url": {
+      "get": {"operationId": "users_isos_get_part_url", "tags": ["Users"], "summary": "Get ISO part URL"}
+    },
+    "/users/{userId}/isos/complete-upload": {
+      "post": {"operationId": "users_isos_complete_upload", "tags": ["Users"], "summary": "Complete ISO upload"}
+    },
+    "/users/{userId}/vlans": {
+      "get": {"operationId": "users_vlans_list", "tags": ["Users"], "summary": "List user VLANs"}
+    },
+    "/users/{userId}/vlans/{vlanId}": {
+      "get": {"operationId": "users_vlans_get", "tags": ["Users"], "summary": "Get user VLAN"},
+      "patch": {"operationId": "users_vlans_update", "tags": ["Users"], "summary": "Update user VLAN"}
+    },
+    "/vlans/{vlanId}": {
+      "get": {"operationId": "vlans_get", "tags": ["Users"], "summary": "Get VLAN"}
+    }
+  }
+}
