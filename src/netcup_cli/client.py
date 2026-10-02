@@ -49,7 +49,7 @@ class SCPClient:
             raise CLIError(f"Connection error for {method.upper()} {path}: {exc}") from exc
 
         if resp.status_code == 401:
-            raise CLIError("Authentication failed. Run 'netcup-cli auth login' to re-authenticate.")
+            raise CLIError("Authentication failed. Run 'netcup-cli login' to re-authenticate.")
         if resp.status_code == 403:
             raise CLIError(f"Permission denied for {method.upper()} {path}.")
         if resp.status_code == 429:
@@ -83,7 +83,7 @@ class SCPClient:
 def build_client() -> SCPClient:
     creds = load_credentials()
     if creds is None:
-        raise CLIError("Not logged in. Run 'netcup-cli auth login' first.")
+        raise CLIError("Not logged in. Run 'netcup-cli login' first.")
     auth = AuthClient()
     token_set: TokenSet = auth.refresh(creds.refresh_token)
     if token_set.refresh_token and token_set.refresh_token != creds.refresh_token:
