@@ -1,32 +1,25 @@
 #!/usr/bin/env bash
-# install-netcup-cli.sh — Install netcup-cli into a user-owned virtual environment.
+# install-netcup-cli.sh — Install netcup-cli via uv tool install.
 # Works both from a local clone and via: curl -fsSL <url> | bash
 set -euo pipefail
 
 REPO="https://github.com/Maxsander123/netcup-cli"
-INSTALL_DIR="${NETCUP_CLI_INSTALL_DIR:-$HOME/.local/netcup-cli}"
-BIN_DIR="${NETCUP_CLI_BIN_DIR:-$HOME/.local/bin}"
 
-echo "Installing netcup-cli to $INSTALL_DIR ..."
-python3 -m venv "$INSTALL_DIR"
-"$INSTALL_DIR/bin/pip" install --quiet --upgrade pip
+if ! command -v uv &>/dev/null; then
+    echo "uv not found. Install it first:"
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
 
 # If run from inside a local clone, install from there; otherwise pull from GitHub.
 if [[ -n "${BASH_SOURCE[0]:-}" && "${BASH_SOURCE[0]}" != "/dev/stdin" ]]; then
     LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    "$INSTALL_DIR/bin/pip" install --quiet "$LOCAL"
+    echo "Installing netcup-cli from $LOCAL ..."
+    uv tool install "$LOCAL" --force
 else
-    "$INSTALL_DIR/bin/pip" install --quiet "git+$REPO"
+    echo "Installing netcup-cli from GitHub ..."
+    uv tool install "git+$REPO" --force
 fi
 
-mkdir -p "$BIN_DIR"
-cat > "$BIN_DIR/netcup-cli" <<EOF
-#!/usr/bin/env bash
-exec "$INSTALL_DIR/bin/netcup-cli" "\$@"
-EOF
-chmod +x "$BIN_DIR/netcup-cli"
-
 echo ""
-echo "✓ netcup-cli installed."
-echo "  Make sure $BIN_DIR is in your PATH, then run:"
-echo "  netcup-cli login"
+echo "✓ netcup-cli installed. Run: netcup-cli login"
