@@ -7,7 +7,7 @@ Standalone CLI zur Verwaltung von **Netcup VPS**-Servern.
 ## Installation
 
 ```bash
-git clone https://github.com/Maxsander123/netbox-cli.git && bash netbox-cli/install.sh
+git clone https://github.com/Maxsander123/netcup-cli.git && bash netbox-cli/install.sh
 ```
 
 Erstellt eine virtuelle Python-Umgebung unter `~/.local/lib/netbox-cli` und legt einen Shim unter `~/.local/bin/netbox-cli` an.
