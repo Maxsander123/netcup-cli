@@ -16,6 +16,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Also installs the man page — read it with `man netcup-cli`.
 
+## Update
+
+```bash
+netcup-cli update
+```
+
 ## Quick start
 
 ```bash
@@ -129,6 +135,7 @@ netcup-cli install Mia --image 1234 --yes
 | `tasks` | Manage async tasks |
 | `users` | User account, failover IPs, firewall policies |
 | `servers` | Advanced: disks, interfaces, metrics, ISO |
+| `update` | Update to latest version from GitHub |
 | `completion bash\|zsh\|fish` | Shell completion |
 
 Full documentation: `man netcup-cli`

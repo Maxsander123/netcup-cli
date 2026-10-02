@@ -574,6 +574,46 @@ servers_group.add_command(server_snapshots_group, name="snapshots")
 cli.add_command(servers_group)
 
 
+@cli.command("update")
+def cmd_update() -> None:
+    """Update netcup-cli to the latest version from GitHub."""
+    import subprocess as sp
+    repo = "https://github.com/Maxsander123/netcup-cli"
+    man_src = f"{repo}/raw/main/netcup-cli.1"
+    man_dir = _man_dir()
+
+    console.print("Updating netcup-cli ...")
+    try:
+        sp.run(["uv", "tool", "install", f"git+{repo}", "--force"], check=True)
+    except FileNotFoundError:
+        raise CLIError("uv not found. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh")
+    except sp.CalledProcessError as exc:
+        raise CLIError(f"Update failed: {exc}")
+
+    # Update man page
+    try:
+        import urllib.request
+        man_dir.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(man_src, man_dir / "netcup-cli.1")
+        sp.run(["mandb", "-q"], check=False, capture_output=True)
+    except Exception:
+        pass  # man page update is best-effort
+
+    console.print("[green]✓[/green] netcup-cli updated.")
+    try:
+        result = sp.run(["netcup-cli", "--version"], capture_output=True, text=True)
+        console.print(f"  {result.stdout.strip()}")
+    except Exception:
+        pass
+
+
+def _man_dir():
+    from pathlib import Path
+    import os
+    base = os.environ.get("MANPATH", str(Path.home() / ".local" / "share" / "man"))
+    return Path(base.split(":")[0]) / "man1"
+
+
 @cli.command("completion")
 @click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
 def completion(shell: str) -> None:
