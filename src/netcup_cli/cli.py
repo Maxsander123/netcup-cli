@@ -263,38 +263,60 @@ def snapshot_export(ctx: click.Context, server: str, snapshot_id: str) -> None:
 # ── images (list available OS images) ────────────────────────────────────────
 
 @cli.command("images")
-@click.argument("server")
+@click.argument("server", required=False, default=None)
+@click.option("--all", "show_deprecated", is_flag=True, help="Include deprecated images.")
 @click.pass_context
-def cmd_images(ctx: click.Context, server: str) -> None:
-    """List available OS images for a server."""
+def cmd_images(ctx: click.Context, server: str | None, show_deprecated: bool) -> None:
+    """List available OS images.
+
+    Without SERVER uses the first server on your account to fetch the image catalogue.
+    Images are architecture-specific — pass a different SERVER to see its available images.
+    """
     from rich.table import Table
     from rich import box as rbox
+    import json as _json
     client = build_client()
-    server_id = _resolve(client, server)
+
+    if server:
+        server_id = _resolve(client, server)
+        label = server
+    else:
+        all_servers = client.request("GET", "/servers")
+        items_s: list[dict] = all_servers if isinstance(all_servers, list) else (all_servers or {}).get("data", [])  # type: ignore[union-attr]
+        if not items_s:
+            raise CLIError("No servers found on your account.")
+        server_id = str(items_s[0]["id"])
+        label = items_s[0].get("nickname") or items_s[0].get("hostname") or server_id
+
     result = client.request("GET", f"/servers/{_q(server_id)}/image/flavours")
     if ctx.obj.get("json"):
-        import json
-        click.echo(json.dumps(result, indent=2, default=str))
+        click.echo(_json.dumps(result, indent=2, default=str))
         return
     items: list[dict] = result if isinstance(result, list) else (result or {}).get("data", [])  # type: ignore[union-attr]
+    if not show_deprecated:
+        items = [i for i in items if not i.get("deprecated")]
     if not items:
         console.print("[dim]No images available.[/dim]")
         return
-    t = Table(box=rbox.ROUNDED, title=f"OS Images — {server}")
+    t = Table(box=rbox.ROUNDED, title=f"OS Images — {label}")
     t.add_column("ID", style="cyan", no_wrap=True)
     t.add_column("Name", style="bold")
     t.add_column("Method")
     t.add_column("Arch")
-    t.add_column("Deprecated", style="dim")
+    if show_deprecated:
+        t.add_column("Deprecated", style="dim")
     for img in items:
-        t.add_row(
+        row = [
             str(img.get("id", "")),
             img.get("name") or "—",
             img.get("installationMethod") or "—",
             img.get("architecture") or "—",
-            "yes" if img.get("deprecated") else "",
-        )
+        ]
+        if show_deprecated:
+            row.append("yes" if img.get("deprecated") else "")
+        t.add_row(*row)
     console.print(t)
+    console.print(f"[dim]{len(items)} image(s)[/dim]")
 
 
 # ── install (reinstall / new OS) ──────────────────────────────────────────────
