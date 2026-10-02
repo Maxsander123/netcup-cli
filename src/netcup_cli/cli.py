@@ -260,6 +260,285 @@ def snapshot_export(ctx: click.Context, server: str, snapshot_id: str) -> None:
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
+# ── images (list available OS images) ────────────────────────────────────────
+
+@cli.command("images")
+@click.argument("server", required=False, default=None)
+@click.option("--all", "show_deprecated", is_flag=True, help="Include deprecated images.")
+@click.pass_context
+def cmd_images(ctx: click.Context, server: str | None, show_deprecated: bool) -> None:
+    """List available OS images.
+
+    Without SERVER uses the first server on your account to fetch the image catalogue.
+    Images are architecture-specific — pass a different SERVER to see its available images.
+    """
+    from rich.table import Table
+    from rich import box as rbox
+    import json as _json
+    client = build_client()
+
+    if server:
+        server_id = _resolve(client, server)
+        label = server
+    else:
+        all_servers = client.request("GET", "/servers")
+        items_s: list[dict] = all_servers if isinstance(all_servers, list) else (all_servers or {}).get("data", [])  # type: ignore[union-attr]
+        if not items_s:
+            raise CLIError("No servers found on your account.")
+        server_id = str(items_s[0]["id"])
+        label = items_s[0].get("nickname") or items_s[0].get("hostname") or server_id
+
+    result = client.request("GET", f"/servers/{_q(server_id)}/image/flavours")
+    if ctx.obj.get("json"):
+        click.echo(_json.dumps(result, indent=2, default=str))
+        return
+    items: list[dict] = result if isinstance(result, list) else (result or {}).get("data", [])  # type: ignore[union-attr]
+    if not show_deprecated:
+        items = [i for i in items if not i.get("deprecated")]
+    if not items:
+        console.print("[dim]No images available.[/dim]")
+        return
+    t = Table(box=rbox.ROUNDED, title=f"OS Images — {label}")
+    t.add_column("ID", style="cyan", no_wrap=True)
+    t.add_column("Name", style="bold")
+    t.add_column("Method")
+    t.add_column("Arch")
+    if show_deprecated:
+        t.add_column("Deprecated", style="dim")
+    for img in items:
+        row = [
+            str(img.get("id", "")),
+            img.get("name") or "—",
+            img.get("installationMethod") or "—",
+            img.get("architecture") or "—",
+        ]
+        if show_deprecated:
+            row.append("yes" if img.get("deprecated") else "")
+        t.add_row(*row)
+    console.print(t)
+    console.print(f"[dim]{len(items)} image(s)[/dim]")
+
+
+# ── install (reinstall / new OS) ──────────────────────────────────────────────
+
+@cli.command("install")
+@click.argument("server")
+@click.option("--image", "image_id", default=None, help="Image ID (from 'netcup-cli images <server>').")
+@click.option("--hostname", default=None, help="Hostname to set after install.")
+@click.option("--locale", default=None, help="Locale, e.g. de_DE.UTF-8")
+@click.option("--timezone", default=None, help="Timezone, e.g. Europe/Berlin")
+@click.option("--partitioning", default=None, help="Partitioning scheme ID (leave blank for default).")
+@click.option("--username", default=None, help="Additional user to create.")
+@click.option("--password", default=None, help="Password for the additional user (prompted if omitted).")
+@click.option("--ssh-key", "ssh_key_ids", multiple=True, help="SSH key ID to inject (repeatable). Use 'netcup-cli ssh-key list'.")
+@click.option("--no-ssh-password", is_flag=True, default=False, help="Disable SSH password authentication.")
+@click.option("--script", "script_file", type=click.Path(exists=True), default=None, help="Custom post-install script file.")
+@click.option("--send-email", is_flag=True, default=False, help="Send confirmation e-mail after install.")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation.")
+@click.pass_context
+def cmd_install(
+    ctx: click.Context,
+    server: str,
+    image_id: str | None,
+    hostname: str | None,
+    locale: str | None,
+    timezone: str | None,
+    partitioning: str | None,
+    username: str | None,
+    password: str | None,
+    ssh_key_ids: tuple[str, ...],
+    no_ssh_password: bool,
+    script_file: str | None,
+    send_email: bool,
+    yes: bool,
+) -> None:
+    """Reinstall or install a new OS on a server.
+
+    Lists available images with: netcup-cli images <server>
+    Lists SSH keys with:         netcup-cli ssh-key list
+    """
+    from rich.table import Table
+    from rich import box as rbox
+    import getpass as _getpass
+
+    client = build_client()
+    server_id = _resolve(client, server)
+
+    # ── Interactive image picker if --image not given ─────────────────────────
+    if not image_id:
+        result = client.request("GET", f"/servers/{_q(server_id)}/image/flavours")
+        items: list[dict] = result if isinstance(result, list) else (result or {}).get("data", [])  # type: ignore[union-attr]
+        items = [i for i in items if not i.get("deprecated")]
+        if not items:
+            raise CLIError("No images available for this server.")
+        t = Table(box=rbox.ROUNDED, title=f"Available OS Images — {server}")
+        t.add_column("#", style="dim")
+        t.add_column("ID", style="cyan", no_wrap=True)
+        t.add_column("Name", style="bold")
+        t.add_column("Method")
+        for idx, img in enumerate(items, 1):
+            t.add_row(str(idx), str(img.get("id", "")), img.get("name") or "—", img.get("installationMethod") or "—")
+        console.print(t)
+        raw = click.prompt("Select image number")
+        if not raw.isdigit() or not (1 <= int(raw) <= len(items)):
+            raise CLIError("Invalid selection.")
+        chosen = items[int(raw) - 1]
+        image_id = str(chosen["id"])
+        console.print(f"Selected: [bold]{chosen.get('name')}[/bold] (ID {image_id})")
+
+    # ── Prompt for missing common options ─────────────────────────────────────
+    if not hostname:
+        hostname = click.prompt("Hostname", default=server)
+    if not locale:
+        locale = click.prompt("Locale", default="en_US.UTF-8")
+    if not timezone:
+        timezone = click.prompt("Timezone", default="Europe/Berlin")
+
+    # ── Optional user creation ────────────────────────────────────────────────
+    if not username:
+        create_user = click.confirm("Create additional user?", default=False)
+        if create_user:
+            username = click.prompt("Username")
+
+    if username and not password:
+        password = _getpass.getpass(f"Password for '{username}': ")
+
+    # ── SSH key picker if none given ──────────────────────────────────────────
+    if not ssh_key_ids:
+        keys_result = client.request("GET", "/users/me/ssh-keys")
+        keys: list[dict] = keys_result if isinstance(keys_result, list) else (keys_result or {}).get("data", [])  # type: ignore[union-attr]
+        if keys:
+            console.print("\nAvailable SSH keys:")
+            for k in keys:
+                console.print(f"  [cyan]{k.get('id')}[/cyan]  {k.get('name')}")
+            raw_keys = click.prompt("SSH key IDs to inject (comma-separated, or leave blank)", default="")
+            if raw_keys.strip():
+                ssh_key_ids = tuple(k.strip() for k in raw_keys.split(",") if k.strip())
+
+    # ── Custom script ─────────────────────────────────────────────────────────
+    script_content: str | None = None
+    if script_file:
+        script_content = open(script_file).read()
+        if len(script_content) > 10000:
+            raise CLIError("Custom script exceeds 10,000 character limit.")
+
+    # ── Build request body ────────────────────────────────────────────────────
+    body: dict = {"imageId": image_id}
+    if hostname:
+        body["hostname"] = hostname
+    if locale:
+        body["locale"] = locale
+    if timezone:
+        body["timezone"] = timezone
+    if partitioning:
+        body["partitioning"] = partitioning
+    if username:
+        body["createAdditionalUser"] = True
+        body["username"] = username
+    if password:
+        body["userPassword"] = password
+    if ssh_key_ids:
+        body["sshKeyIds"] = list(ssh_key_ids)
+    body["sshPasswordAuthentication"] = not no_ssh_password
+    if script_content:
+        body["customScript"] = script_content
+    body["sendEmail"] = send_email
+
+    # ── Summary + confirmation ────────────────────────────────────────────────
+    console.print(f"\n[bold yellow]Install summary for {server} ({server_id}):[/bold yellow]")
+    console.print(f"  Image:    {image_id}")
+    console.print(f"  Hostname: {hostname}")
+    console.print(f"  Locale:   {locale}  /  Timezone: {timezone}")
+    if username:
+        console.print(f"  User:     {username}")
+    if ssh_key_ids:
+        console.print(f"  SSH keys: {', '.join(ssh_key_ids)}")
+    console.print(f"  SSH password auth: {'disabled' if no_ssh_password else 'enabled'}")
+    if script_content:
+        console.print(f"  Custom script: {len(script_content)} chars")
+
+    confirm_action(
+        f"\nInstall image on {server}? The disk will be FORMATTED — all data will be lost.",
+        yes=yes,
+    )
+
+    result = client.request("POST", f"/servers/{_q(server_id)}/image/install", json_body=body)
+    print_result(result, as_json=ctx.obj.get("json", False))
+    console.print("[green]✓[/green] Install started.")
+
+
+# ── ssh-key management ────────────────────────────────────────────────────────
+
+@cli.group("ssh-key")
+def ssh_key_group() -> None:
+    """Manage SSH public keys on your account."""
+
+
+@ssh_key_group.command("list")
+@click.pass_context
+def ssh_key_list(ctx: click.Context) -> None:
+    """List all SSH keys on your account."""
+    from rich.table import Table
+    from rich import box as rbox
+    client = build_client()
+    result = client.request("GET", "/users/me/ssh-keys")
+    if ctx.obj.get("json"):
+        import json
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+    keys: list[dict] = result if isinstance(result, list) else (result or {}).get("data", [])  # type: ignore[union-attr]
+    if not keys:
+        console.print("[dim]No SSH keys on your account.[/dim]")
+        return
+    t = Table(box=rbox.ROUNDED)
+    t.add_column("ID", style="cyan", no_wrap=True)
+    t.add_column("Name", style="bold")
+    t.add_column("Fingerprint")
+    for k in keys:
+        t.add_row(str(k.get("id", "")), k.get("name") or "—", k.get("fingerprint") or k.get("publicKey", "")[:40] + "…")
+    console.print(t)
+
+
+@ssh_key_group.command("add")
+@click.argument("name")
+@click.argument("pubkey_file", type=click.Path(exists=True), required=False)
+@click.option("--key", "key_str", default=None, help="Public key string (alternative to file).")
+@click.pass_context
+def ssh_key_add(ctx: click.Context, name: str, pubkey_file: str | None, key_str: str | None) -> None:
+    """Upload an SSH public key.
+
+    \b
+    Examples:
+      netcup-cli ssh-key add mykey ~/.ssh/id_ed25519.pub
+      netcup-cli ssh-key add mykey --key "ssh-ed25519 AAAA..."
+    """
+    if pubkey_file:
+        pub = open(pubkey_file).read().strip()
+    elif key_str:
+        pub = key_str.strip()
+    else:
+        pub = click.prompt("Public key").strip()
+    client = build_client()
+    result = client.request("POST", "/users/me/ssh-keys", json_body={"name": name, "publicKey": pub})
+    print_result(result, as_json=ctx.obj.get("json", False))
+    console.print(f"[green]✓[/green] SSH key '{name}' added.")
+
+
+@ssh_key_group.command("delete")
+@click.argument("key_id")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation.")
+@click.pass_context
+def ssh_key_delete(ctx: click.Context, key_id: str, yes: bool) -> None:
+    """Delete an SSH key. May remove server access."""
+    confirm_action(
+        f"Delete SSH key {key_id}? This may remove access to servers using this key.",
+        yes=yes,
+    )
+    client = build_client()
+    client.request("DELETE", f"/users/me/ssh-keys/{_q(key_id)}")
+    console.print(f"[green]✓[/green] SSH key {key_id} deleted.")
+
+
 # ── advanced subgroups ────────────────────────────────────────────────────────
 
 cli.add_command(rdns_group)
