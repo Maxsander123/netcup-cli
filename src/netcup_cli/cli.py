@@ -6,7 +6,7 @@ import click
 
 from netcup_cli import __version__
 from netcup_cli.auth import AuthClient
-from netcup_cli.client import SCPClient, build_client
+from netcup_cli.client import build_client, resolve_server
 from netcup_cli.config import Credentials, delete_credentials, load_credentials, save_credentials
 from netcup_cli.errors import CLIError
 from netcup_cli.output import console, print_result, print_server, print_servers
@@ -17,7 +17,7 @@ from netcup_cli.safety import confirm_action
 
 # Advanced subgroups
 from netcup_cli.commands.disks import disks_group
-from netcup_cli.commands.images import server_iso_group, server_snapshots_group
+from netcup_cli.commands.images import server_iso_group, server_user_image
 from netcup_cli.commands.metrics import metrics_group
 from netcup_cli.commands.misc import api_group, maintenance_group
 from netcup_cli.commands.networking import rdns_group, server_interfaces_group, vlans_group
@@ -29,16 +29,7 @@ def _q(s: str) -> str:
     return quote(str(s), safe="")
 
 
-def _resolve(client: SCPClient, name: str) -> str:
-    """Resolve nickname, hostname, or numeric ID to a server ID string."""
-    if str(name).isdigit():
-        return str(name)
-    servers = client.request("GET", "/servers")
-    items: list[dict] = servers if isinstance(servers, list) else (servers or {}).get("data", [])  # type: ignore[union-attr]
-    for s in items:
-        if s.get("nickname") == name or s.get("hostname") == name or str(s.get("id")) == name:
-            return str(s["id"])
-    raise CLIError(f"No server found for '{name}'. Use 'netcup-cli list' to see available servers.")
+_resolve = resolve_server
 
 
 @click.group()
@@ -211,15 +202,36 @@ def snapshot_list(ctx: click.Context, server: str) -> None:
 @click.argument("server")
 @click.option("--name", "-n", required=True, help="Snapshot name.")
 @click.option("--description", "-d", default="", help="Optional description.")
+@click.option("--disk", "disk_name", default=None, help="Snapshot a single disk offline (required on UEFI servers, e.g. vda).")
 @click.pass_context
-def snapshot_create(ctx: click.Context, server: str, name: str, description: str) -> None:
-    """Create a snapshot."""
+def snapshot_create(ctx: click.Context, server: str, name: str, description: str, disk_name: str | None) -> None:
+    """Create a snapshot (online for all disks, or offline for one disk with --disk)."""
     client = build_client()
     server_id = _resolve(client, server)
-    body: dict = {"name": name}
+    body: dict = {"name": name, "onlineSnapshot": disk_name is None}
     if description:
         body["description"] = description
+    if disk_name:
+        body["diskName"] = disk_name
     result = client.request("POST", f"/servers/{_q(server_id)}/snapshots", json_body=body)
+    print_result(result, as_json=ctx.obj.get("json", False))
+
+
+@snapshot_group.command("check")
+@click.argument("server")
+@click.option("--disk", "disk_name", default=None, help="Check offline snapshot of a single disk.")
+@click.pass_context
+def snapshot_check(ctx: click.Context, server: str, disk_name: str | None) -> None:
+    """Dry-run: check whether a snapshot can be created."""
+    client = build_client()
+    server_id = _resolve(client, server)
+    body: dict = {"onlineSnapshot": disk_name is None}
+    if disk_name:
+        body["diskName"] = disk_name
+    result = client.request("POST", f"/servers/{_q(server_id)}/snapshots:dryrun", json_body=body)
+    if not result and not ctx.obj.get("json"):
+        console.print("[green]✓[/green] Snapshot possible.")
+        return
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -268,6 +280,10 @@ def snapshot_export(ctx: click.Context, server: str, snapshot_id: str) -> None:
 
 # ── images (list available OS images) ────────────────────────────────────────
 
+def _os_name(flavour: dict) -> str:
+    return (flavour.get("image") or {}).get("name") or flavour.get("name") or "—"
+
+
 @cli.command("images")
 @click.argument("server", required=False, default=None)
 @click.option("--all", "show_deprecated", is_flag=True, help="Include deprecated images.")
@@ -304,17 +320,18 @@ def cmd_images(ctx: click.Context, server: str | None, show_deprecated: bool) ->
     if not items:
         console.print("[dim]No images available.[/dim]")
         return
+    items = sorted(items, key=_os_name)
     t = Table(box=rbox.ROUNDED, title=f"OS Images — {label}")
     t.add_column("ID", style="cyan", no_wrap=True)
-    t.add_column("Name", style="bold")
-    t.add_column("Alias")
+    t.add_column("OS", style="bold")
+    t.add_column("Flavour")
     t.add_column("Description")
     for img in items:
         t.add_row(
             str(img.get("id", "")),
-            img.get("name") or "—",
-            img.get("alias") or "—",
-            (img.get("text") or "")[:60],
+            _os_name(img),
+            img.get("alias") or img.get("name") or "—",
+            (img.get("text") or "").strip()[:60],
         )
     console.print(t)
     console.print(f"[dim]{len(items)} image(s)[/dim]")
@@ -371,20 +388,21 @@ def cmd_install(
         items: list[dict] = result if isinstance(result, list) else (result or {}).get("data", [])  # type: ignore[union-attr]
         if not items:
             raise CLIError("No images available for this server.")
+        items = sorted(items, key=_os_name)
         t = Table(box=rbox.ROUNDED, title=f"Available OS Images — {server}")
         t.add_column("#", style="dim")
         t.add_column("ID", style="cyan", no_wrap=True)
-        t.add_column("Name", style="bold")
-        t.add_column("Alias")
+        t.add_column("OS", style="bold")
+        t.add_column("Flavour")
         for idx, img in enumerate(items, 1):
-            t.add_row(str(idx), str(img.get("id", "")), img.get("name") or "—", img.get("alias") or "—")
+            t.add_row(str(idx), str(img.get("id", "")), _os_name(img), img.get("alias") or img.get("name") or "—")
         console.print(t)
         raw = click.prompt("Select image number")
         if not raw.isdigit() or not (1 <= int(raw) <= len(items)):
             raise CLIError("Invalid selection.")
         chosen = items[int(raw) - 1]
         image_id = str(chosen["id"])
-        console.print(f"Selected: [bold]{chosen.get('name')}[/bold] (ID {image_id})")
+        console.print(f"Selected: [bold]{_os_name(chosen)}[/bold] (ID {image_id})")
 
     # ── Prompt for missing common options ─────────────────────────────────────
     if not hostname:
@@ -492,9 +510,18 @@ def ssh_key_list(ctx: click.Context) -> None:
     t = Table(box=rbox.ROUNDED)
     t.add_column("ID", style="cyan", no_wrap=True)
     t.add_column("Name", style="bold")
-    t.add_column("Fingerprint")
+    t.add_column("Type")
+    t.add_column("Comment")
+    t.add_column("Created")
     for k in keys:
-        t.add_row(str(k.get("id", "")), k.get("name") or "—", k.get("fingerprint") or k.get("publicKey", "")[:40] + "…")
+        parts = (k.get("key") or "").split()
+        t.add_row(
+            str(k.get("id", "")),
+            k.get("name") or "—",
+            parts[0] if parts else "—",
+            " ".join(parts[2:]) or "—",
+            (k.get("createdAt") or "")[:10] or "—",
+        )
     console.print(t)
 
 
@@ -518,7 +545,7 @@ def ssh_key_add(ctx: click.Context, name: str, pubkey_file: str | None, key_str:
     else:
         pub = click.prompt("Public key").strip()
     client = build_client()
-    result = client.request("POST", "/users/me/ssh-keys", json_body={"name": name, "publicKey": pub})
+    result = client.request("POST", "/users/me/ssh-keys", json_body={"name": name, "key": pub})
     print_result(result, as_json=ctx.obj.get("json", False))
     console.print(f"[green]✓[/green] SSH key '{name}' added.")
 
@@ -552,7 +579,7 @@ servers_group.add_command(disks_group)
 servers_group.add_command(server_iso_group, name="iso")
 servers_group.add_command(server_interfaces_group, name="interfaces")
 servers_group.add_command(metrics_group)
-servers_group.add_command(server_snapshots_group, name="snapshots")
+servers_group.add_command(server_user_image)
 cli.add_command(servers_group)
 
 

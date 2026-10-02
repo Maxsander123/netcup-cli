@@ -16,7 +16,7 @@ def api_group() -> None:
 def api_ping(ctx: click.Context) -> None:
     """Ping the SCP API to check connectivity."""
     client = build_client()
-    result = client.request("GET", "/ping")
+    result = client.request("GET", "/api/ping")
     print_result(result or {"status": "ok"}, as_json=ctx.obj.get("json", False))
 
 

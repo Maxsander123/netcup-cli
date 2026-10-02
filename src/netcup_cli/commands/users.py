@@ -54,18 +54,13 @@ def users_logs() -> None:
 
 @users_logs.command("list")
 @click.argument("user_id", required=False, default=None)
-@click.option("--page", type=int, default=None)
-@click.option("--page-size", type=int, default=None)
+@click.option("--limit", type=int, default=20, show_default=True)
+@click.option("--offset", type=int, default=0, show_default=True)
 @click.pass_context
-def users_logs_list(ctx: click.Context, user_id: str | None, page: int | None, page_size: int | None) -> None:
+def users_logs_list(ctx: click.Context, user_id: str | None, limit: int, offset: int) -> None:
     """List user logs."""
-    params = {}
-    if page is not None:
-        params["page"] = page
-    if page_size is not None:
-        params["pageSize"] = page_size
     client = build_client()
-    result = client.request("GET", f"/users/{_uid(user_id)}/logs", params=params or None)
+    result = client.request("GET", f"/users/{_uid(user_id)}/logs", params={"limit": limit, "offset": offset})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -92,7 +87,7 @@ def ssh_keys_list(ctx: click.Context, user_id: str | None) -> None:
 def ssh_keys_create(ctx: click.Context, user_id: str | None, name: str, public_key: str) -> None:
     """Add an SSH public key."""
     client = build_client()
-    result = client.request("POST", f"/users/{_uid(user_id)}/ssh-keys", json_body={"name": name, "publicKey": public_key})
+    result = client.request("POST", f"/users/{_uid(user_id)}/ssh-keys", json_body={"name": name, "key": public_key})
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
@@ -136,7 +131,7 @@ def failover_ipv4_list(ctx: click.Context, user_id: str | None) -> None:
 @failover_ipv4.command("route")
 @click.argument("user_id", required=False, default=None)
 @click.argument("failover_ip_id")
-@click.option("--server-id", required=True, help="Target server ID to route to.")
+@click.option("--server-id", type=int, required=True, help="Target server ID to route to.")
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
 def failover_ipv4_route(ctx: click.Context, user_id: str | None, failover_ip_id: str, server_id: str, yes: bool) -> None:
@@ -168,7 +163,7 @@ def failover_ipv6_list(ctx: click.Context, user_id: str | None) -> None:
 @failover_ipv6.command("route")
 @click.argument("user_id", required=False, default=None)
 @click.argument("failover_ip_id")
-@click.option("--server-id", required=True)
+@click.option("--server-id", type=int, required=True, help="Target server ID to route to.")
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
 def failover_ipv6_route(ctx: click.Context, user_id: str | None, failover_ip_id: str, server_id: str, yes: bool) -> None:

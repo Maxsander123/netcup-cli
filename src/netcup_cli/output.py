@@ -93,13 +93,23 @@ def print_server(data: dict, *, as_json: bool = False) -> None:
     mem = live.get("currentServerMemoryInMiB")
     _row("Memory", f"{mem} MiB ({mem // 1024} GiB)" if mem else None)
 
-    # Disks
-    for i, disk in enumerate(live.get("disks") or []):
-        cap = disk.get("capacityInMiB")
-        _row(f"Disk {i}", f"{disk.get('id')}  {cap} MiB ({cap // 1024} GiB)" if cap else str(disk.get("id")))
+    up = live.get("uptimeInSeconds")
+    if up:
+        _row("Uptime", f"{up // 86400}d {up % 86400 // 3600}h {up % 3600 // 60}m")
 
-    # Remaining top-level fields not already shown
-    shown = {"id", "nickname", "hostname", "template", "disabled", "serverLiveInfo", "site"}
+    for disk in live.get("disks") or []:
+        cap = disk.get("capacityInMiB") or 0
+        used = disk.get("allocationInMiB")
+        used_s = f", {used // 1024} GiB used" if used is not None else ""
+        _row(f"Disk {disk.get('dev', '?')}", f"{cap // 1024} GiB ({disk.get('driver', '')}{used_s})")
+
+    v4 = [a.get("ip") for a in data.get("ipv4Addresses") or [] if a.get("ip")]
+    _row("IPv4", ", ".join(v4))
+    v6 = [f"{a.get('networkPrefix')}/{a.get('networkPrefixLength')}" for a in data.get("ipv6Addresses") or []]
+    _row("IPv6", ", ".join(v6))
+
+    shown = {"id", "nickname", "hostname", "template", "disabled", "serverLiveInfo", "site",
+             "ipv4Addresses", "ipv6Addresses"}
     for k, v in data.items():
         if k not in shown:
             _row(k, v)
@@ -113,14 +123,14 @@ def print_server(data: dict, *, as_json: bool = False) -> None:
         iface_t = Table(box=box.ROUNDED, title="Interfaces")
         iface_t.add_column("#", style="dim", no_wrap=True)
         iface_t.add_column("MAC", style="cyan", no_wrap=True)
-        iface_t.add_column("IPv4")
-        iface_t.add_column("IPv6 Prefix")
+        iface_t.add_column("IPv4", overflow="fold")
+        iface_t.add_column("IPv6 Prefix", overflow="fold")
         iface_t.add_column("VLAN")
         iface_t.add_column("RX / TX (month)")
 
         for idx, iface in enumerate(ifaces):
             mac = iface.get("mac") or "—"
-            ips = [a.get("ip", "") for a in (iface.get("ipAddresses") or []) if a.get("ip")]
+            ips = iface.get("ipv4Addresses") or []
             ipv4 = "\n".join(ips) if ips else "—"
             ipv6_prefixes = iface.get("ipv6NetworkPrefixes") or []
             ipv6 = "\n".join(ipv6_prefixes) if ipv6_prefixes else "—"
@@ -134,24 +144,36 @@ def print_server(data: dict, *, as_json: bool = False) -> None:
         console.print(iface_t)
 
 
+_SUMMARY_KEYS = ("name", "username", "city", "ip", "cidr", "progressInPercent", "key", "id")
+
+
+def _cell(v: object) -> str:
+    if v is None or v == "":
+        return "—"
+    if isinstance(v, dict):
+        for k in _SUMMARY_KEYS:
+            if v.get(k) not in (None, ""):
+                return f"{v[k]}%" if k == "progressInPercent" else str(v[k])
+        return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, list):
+        return ", ".join(_cell(i) for i in v) or "—"
+    return str(v)
+
+
 def _print_table(rows: list[dict]) -> None:
     keys = list(rows[0].keys())
     t = Table(box=box.ROUNDED)
     for k in keys:
-        t.add_column(str(k))
+        t.add_column(str(k), overflow="fold")
     for row in rows:
-        val_strs = []
-        for k in keys:
-            v = row.get(k, "")
-            val_strs.append(json.dumps(v) if isinstance(v, (dict, list)) else str(v))
-        t.add_row(*val_strs)
+        t.add_row(*(_cell(row.get(k)) for k in keys))
     console.print(t)
 
 
 def _print_dict(d: dict) -> None:
     t = Table(box=box.SIMPLE, show_header=False)
     t.add_column("Key", style="bold")
-    t.add_column("Value")
+    t.add_column("Value", overflow="fold")
     for k, v in d.items():
-        t.add_row(str(k), json.dumps(v) if isinstance(v, (dict, list)) else str(v))
+        t.add_row(str(k), json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else _cell(v))
     console.print(t)
