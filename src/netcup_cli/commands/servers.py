@@ -6,7 +6,7 @@ import click
 
 from netcup_cli.client import build_client, resolve_server
 from netcup_cli.errors import CLIError
-from netcup_cli.output import print_result, print_server, print_servers
+from netcup_cli.output import print_result
 from netcup_cli.safety import confirm_action
 
 
@@ -14,31 +14,7 @@ def _q(s: str) -> str:
     return quote(str(s), safe="")
 
 
-@click.group("servers")
-def servers_group() -> None:
-    """Advanced server operations (disks, ISO, metrics, rescue, settings)."""
-
-
-@servers_group.command("list")
-@click.pass_context
-def servers_list(ctx: click.Context) -> None:
-    """List all servers."""
-    client = build_client()
-    result = client.request("GET", "/servers")
-    print_servers(result if isinstance(result, list) else [], as_json=ctx.obj.get("json", False))
-
-
-@servers_group.command("get")
-@click.argument("server")
-@click.pass_context
-def servers_get(ctx: click.Context, server: str) -> None:
-    """Get details of a server."""
-    client = build_client()
-    result = client.request("GET", f"/servers/{_q(resolve_server(client, server))}")
-    print_server(result, as_json=ctx.obj.get("json", False))  # type: ignore[arg-type]
-
-
-@servers_group.command("update")
+@click.command("set")
 @click.argument("server")
 @click.option("--nickname", default=None)
 @click.option("--hostname", default=None)
@@ -50,7 +26,7 @@ def servers_get(ctx: click.Context, server: str) -> None:
 @click.option("--root-password", is_flag=True, default=False, help="Prompt for and set a new root password.")
 @click.option("--yes", "-y", is_flag=True)
 @click.pass_context
-def servers_update(
+def servers_set(
     ctx: click.Context,
     server: str,
     nickname: str | None,
@@ -63,7 +39,7 @@ def servers_update(
     root_password: bool,
     yes: bool,
 ) -> None:
-    """Change server settings. Each option is sent as a separate PATCH (API accepts one at a time)."""
+    """Change server settings (nickname, hostname, boot order, ...). Each option is sent as a separate PATCH (API accepts one at a time)."""
     patches: list[dict] = []
     if nickname is not None:
         patches.append({"nickname": nickname})
@@ -103,7 +79,7 @@ _POWER = {
 }
 
 
-@servers_group.command("power")
+@click.command("power")
 @click.argument("server")
 @click.argument("action", type=click.Choice(list(_POWER), case_sensitive=False))
 @click.option("--yes", "-y", is_flag=True)
@@ -124,7 +100,7 @@ def servers_power(ctx: click.Context, server: str, action: str, yes: bool) -> No
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
-@servers_group.command("gpu-driver")
+@click.command("gpu-driver")
 @click.argument("server")
 @click.pass_context
 def servers_gpu_driver(ctx: click.Context, server: str) -> None:
@@ -134,7 +110,7 @@ def servers_gpu_driver(ctx: click.Context, server: str) -> None:
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
-@servers_group.group("guest-agent")
+@click.group("guest-agent")
 def servers_guest_agent() -> None:
     """QEMU guest agent information."""
 
@@ -159,7 +135,7 @@ def guest_agent_status(ctx: click.Context, server: str) -> None:
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
-@servers_group.command("logs")
+@click.command("logs")
 @click.argument("server")
 @click.option("--limit", type=int, default=20, show_default=True)
 @click.option("--offset", type=int, default=0, show_default=True)
@@ -173,7 +149,7 @@ def servers_logs(ctx: click.Context, server: str, limit: int, offset: int) -> No
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
-@servers_group.group("rescue")
+@click.group("rescue")
 def servers_rescue() -> None:
     """Manage the rescue system."""
 
@@ -214,7 +190,7 @@ def rescue_deactivate(ctx: click.Context, server: str, yes: bool) -> None:
     print_result(result, as_json=ctx.obj.get("json", False))
 
 
-@servers_group.command("optimize-storage")
+@click.command("optimize-storage")
 @click.argument("server")
 @click.option("--disk", "disks", multiple=True, help="Disk name to optimize (repeatable, default: all).")
 @click.option("--start/--no-start", default=True, show_default=True, help="Start server after optimization.")
