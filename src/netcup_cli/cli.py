@@ -32,6 +32,61 @@ def _q(s: str) -> str:
 _resolve = resolve_server
 
 
+def _guest_os_name(value: object, depth: int = 0) -> str | None:
+    """Extract a guest OS name from Netcup's unstructured guest-agent payload."""
+    if depth > 4 or not isinstance(value, dict):
+        return None
+
+    fields = {str(key).replace("-", "").replace("_", "").lower(): item for key, item in value.items()}
+
+    for key in ("prettyname", "displayname", "osname", "operatingsystem", "distribution", "distro", "name"):
+        candidate = fields.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            name = candidate.strip()
+            version = fields.get("version") or fields.get("versionid")
+            if key not in ("prettyname", "displayname") and isinstance(version, str) and version.strip():
+                if version.strip().casefold() not in name.casefold():
+                    name = f"{name} {version.strip()}"
+            return name
+
+    for key in ("operatingsystem", "osinfo", "guestosinfo", "os", "guestinfo"):
+        candidate = fields.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+        nested = _guest_os_name(candidate, depth + 1)
+        if nested:
+            return nested
+    return None
+
+
+def _servers_with_runtime_info(client, servers: list[dict]) -> list[dict]:
+    """Add best-effort live state and guest OS data for table output."""
+    rows: list[dict] = []
+    for server in servers:
+        row = dict(server)
+        server_id = row.get("id")
+        row["state"] = "?"
+        row["operatingSystem"] = "—"
+        if server_id is not None:
+            try:
+                details = client.request("GET", f"/servers/{_q(server_id)}")
+                if isinstance(details, dict):
+                    live_info = details.get("serverLiveInfo") or {}
+                    if isinstance(live_info, dict) and live_info.get("state"):
+                        row["state"] = str(live_info["state"])
+            except CLIError:
+                pass
+
+            try:
+                agent = client.request("GET", f"/servers/{_q(server_id)}/guest-agent")
+                if isinstance(agent, dict) and agent.get("guestAgentAvailable") is not False:
+                    row["operatingSystem"] = _guest_os_name(agent.get("guestAgentData")) or "—"
+            except CLIError:
+                pass
+        rows.append(row)
+    return rows
+
+
 @click.group()
 @click.version_option(__version__, prog_name="netcup-cli")
 @click.option("--json", "as_json", is_flag=True, default=False, help="Output raw JSON.")
@@ -81,7 +136,10 @@ def cmd_list(ctx: click.Context) -> None:
     client = build_client()
     result = client.request("GET", "/servers")
     servers: list[dict] = result if isinstance(result, list) else (result or {}).get("data", [])  # type: ignore[union-attr]
-    print_servers(servers, as_json=ctx.obj.get("json", False))
+    as_json = ctx.obj.get("json", False)
+    if not as_json:
+        servers = _servers_with_runtime_info(client, servers)
+    print_servers(servers, as_json=as_json)
 
 
 @cli.command("info")
