@@ -100,6 +100,8 @@ def print_servers(servers: list[dict], *, as_json: bool = False) -> None:
     t.add_column("Nickname", style="bold")
     t.add_column("Hostname")
     t.add_column("Template")
+    t.add_column("State", justify="center")
+    t.add_column("OS")
     t.add_column("Disabled")
     for s in servers:
         tmpl = s.get("template") or {}
@@ -109,6 +111,8 @@ def print_servers(servers: list[dict], *, as_json: bool = False) -> None:
             str(s.get("nickname") or "—"),
             str(s.get("hostname") or "—"),
             tmpl_name,
+            str(s.get("state") or "?"),
+            str(s.get("operatingSystem") or "—"),
             "yes" if s.get("disabled") else "no",
         )
     console.print(t)
