@@ -2,7 +2,7 @@
 
 ## Server Control Panel (SCP)
 
-The repository-root `openapi.json` is the SCP contract. Its existing command inventory follows. The separate CCP DNS contract and proposed command mapping are below it.
+The repository-root `openapi.json` is the SCP contract. The command column names the current CLI commands. The separate CCP DNS contract and its command mapping follow.
 
 OpenAPI snapshot version: `2026.0923.125530`  
 Total operations: 87
@@ -19,50 +19,50 @@ Total operations: 87
 | GET | /rdns/ipv6/{ip} | `rdns ipv6 get` |
 | PUT | /rdns/ipv6/{ip} | `rdns ipv6 set` |
 | DELETE | /rdns/ipv6/{ip} | `rdns ipv6 delete` |
-| GET | /servers | `servers list` |
-| GET | /servers/{serverId} | `servers get` |
-| PATCH | /servers/{serverId} | `servers update` |
-| POST | /servers/{serverId}/power | `servers power` |
-| GET | /servers/{serverId}/gpu-driver | `servers gpu-driver` |
-| GET | /servers/{serverId}/guest-agent | `servers guest-agent get` |
-| GET | /servers/{serverId}/guest-agent/status | `servers guest-agent status` |
-| GET | /servers/{serverId}/logs | `servers logs list` |
-| GET | /servers/{serverId}/rescue | `servers rescue get` |
-| POST | /servers/{serverId}/rescue/activate | `servers rescue activate` |
-| POST | /servers/{serverId}/rescue/deactivate | `servers rescue deactivate` |
-| POST | /servers/{serverId}/storage/optimize | `servers storage optimize` |
-| GET | /servers/{serverId}/disks | `servers disks list` |
-| GET | /servers/{serverId}/disks/supported-drivers | `servers disks supported-drivers` |
-| GET | /servers/{serverId}/disks/{diskId} | `servers disks get` |
-| PATCH | /servers/{serverId}/disks/{diskId} | `servers disks update` |
-| POST | /servers/{serverId}/disks/{diskId}/format | `servers disks format` |
-| GET | /servers/{serverId}/image/flavours | `servers image flavours` |
-| POST | /servers/{serverId}/image/install | `servers image install` |
-| POST | /servers/{serverId}/image/install-user | `servers image install-user` |
-| GET | /servers/{serverId}/iso | `servers iso get` |
-| POST | /servers/{serverId}/iso/attach | `servers iso attach` |
-| POST | /servers/{serverId}/iso/detach | `servers iso detach` |
-| GET | /servers/{serverId}/iso/available | `servers iso available` |
-| GET | /servers/{serverId}/interfaces | `servers interfaces list` |
-| POST | /servers/{serverId}/interfaces | `servers interfaces create` |
-| GET | /servers/{serverId}/interfaces/{interfaceId} | `servers interfaces get` |
-| PATCH | /servers/{serverId}/interfaces/{interfaceId} | `servers interfaces update` |
-| DELETE | /servers/{serverId}/interfaces/{interfaceId} | `servers interfaces delete` |
-| GET | /servers/{serverId}/interfaces/{interfaceId}/firewall | `servers interfaces firewall get` |
-| PUT | /servers/{serverId}/interfaces/{interfaceId}/firewall | `servers interfaces firewall update` |
-| POST | /servers/{serverId}/interfaces/{interfaceId}/firewall/reapply | `servers interfaces firewall reapply` |
-| POST | /servers/{serverId}/interfaces/{interfaceId}/firewall/restore-copied-policies | `servers interfaces firewall restore-copied-policies` |
-| GET | /servers/{serverId}/metrics/cpu | `servers metrics cpu` |
-| GET | /servers/{serverId}/metrics/disk | `servers metrics disk` |
-| GET | /servers/{serverId}/metrics/network | `servers metrics network` |
-| GET | /servers/{serverId}/metrics/network-packets | `servers metrics network-packets` |
-| GET | /servers/{serverId}/snapshots | `servers snapshots list` |
-| POST | /servers/{serverId}/snapshots | `servers snapshots create` |
-| GET | /servers/{serverId}/snapshots/{snapshotId} | `servers snapshots get` |
-| DELETE | /servers/{serverId}/snapshots/{snapshotId} | `servers snapshots delete` |
-| POST | /servers/{serverId}/snapshots/{snapshotId}/export | `servers snapshots export` |
-| POST | /servers/{serverId}/snapshots/{snapshotId}/revert | `servers snapshots revert` |
-| POST | /servers/{serverId}/snapshots/{snapshotId}/revert/dry-run | `servers snapshots dry-run` |
+| GET | /servers | `list` |
+| GET | /servers/{serverId} | `info` |
+| PATCH | /servers/{serverId} | `set` |
+| POST | /servers/{serverId}/power | `power` |
+| GET | /servers/{serverId}/gpu-driver | `gpu-driver` |
+| GET | /servers/{serverId}/guest-agent | `guest-agent get` |
+| GET | /servers/{serverId}/guest-agent/status | `guest-agent status` |
+| GET | /servers/{serverId}/logs | `logs` |
+| GET | /servers/{serverId}/rescue | `rescue status` |
+| POST | /servers/{serverId}/rescue/activate | `rescue activate` |
+| POST | /servers/{serverId}/rescue/deactivate | `rescue deactivate` |
+| POST | /servers/{serverId}/storage/optimize | `optimize-storage` |
+| GET | /servers/{serverId}/disks | `disks list` |
+| GET | /servers/{serverId}/disks/supported-drivers | `disks supported-drivers` |
+| GET | /servers/{serverId}/disks/{diskId} | `disks get` |
+| PATCH | /servers/{serverId}/disks/{diskId} | Not directly exposed |
+| POST | /servers/{serverId}/disks/{diskId}/format | `disks format` |
+| GET | /servers/{serverId}/image/flavours | `images <server>` |
+| POST | /servers/{serverId}/image/install | `install <server>` |
+| POST | /servers/{serverId}/image/install-user | `user-image <server> <image-name>` |
+| GET | /servers/{serverId}/iso | `iso status` |
+| POST | /servers/{serverId}/iso/attach | `iso attach` |
+| POST | /servers/{serverId}/iso/detach | `iso detach` |
+| GET | /servers/{serverId}/iso/available | `iso list` |
+| GET | /servers/{serverId}/interfaces | `interfaces list` |
+| POST | /servers/{serverId}/interfaces | `interfaces create` |
+| GET | /servers/{serverId}/interfaces/{interfaceId} | `interfaces get` |
+| PATCH | /servers/{serverId}/interfaces/{interfaceId} | `interfaces update` |
+| DELETE | /servers/{serverId}/interfaces/{interfaceId} | `interfaces delete` |
+| GET | /servers/{serverId}/interfaces/{interfaceId}/firewall | `interfaces firewall get` |
+| PUT | /servers/{serverId}/interfaces/{interfaceId}/firewall | `interfaces firewall update` |
+| POST | /servers/{serverId}/interfaces/{interfaceId}/firewall/reapply | `interfaces firewall reapply` |
+| POST | /servers/{serverId}/interfaces/{interfaceId}/firewall/restore-copied-policies | `interfaces firewall restore-copied-policies` |
+| GET | /servers/{serverId}/metrics/cpu | `metrics cpu` |
+| GET | /servers/{serverId}/metrics/disk | `metrics disk` |
+| GET | /servers/{serverId}/metrics/network | `metrics network` |
+| GET | /servers/{serverId}/metrics/network-packets | `metrics packets` |
+| GET | /servers/{serverId}/snapshots | `snapshot list` |
+| POST | /servers/{serverId}/snapshots | `snapshot create` |
+| GET | /servers/{serverId}/snapshots/{snapshotId} | Not directly exposed |
+| DELETE | /servers/{serverId}/snapshots/{snapshotId} | `snapshot delete` |
+| POST | /servers/{serverId}/snapshots/{snapshotId}/export | `snapshot export` |
+| POST | /servers/{serverId}/snapshots/{snapshotId}/revert | `snapshot restore` |
+| POST | /servers/{serverId}/snapshots/{snapshotId}/revert/dry-run | `snapshot check` |
 | GET | /tasks | `tasks list` |
 | GET | /tasks/{taskId} | `tasks get` |
 | POST | /tasks/{taskId}/cancel | `tasks cancel` |
@@ -102,7 +102,7 @@ Total operations: 87
 
 | Convenience command | Operations used |
 |--------------------|-----------------|
-| `servers power` | POST /servers/{serverId}/power |
+| `power` | POST /servers/{serverId}/power |
 | `users images upload` | prepare-upload + get-part-url (×N) + complete-upload (or prepare-upload + presigned PUT) |
 | `users isos upload` | prepare-upload + get-part-url (×N) + complete-upload (or prepare-upload + presigned PUT) |
 

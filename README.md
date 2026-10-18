@@ -4,17 +4,22 @@ Command-line client for the [Netcup Server Control Panel (SCP) REST API](https:/
 
 ## Installation
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Maxsander123/netcup-cli/main/scripts/install-netcup-cli.sh | bash
-```
-
-Requires [uv](https://astral.sh/uv) — if not installed yet:
+Requires [uv](https://docs.astral.sh/uv/). Install it first if needed:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Also installs the man page — read it with `man netcup-cli`.
+Then install the latest version from GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Maxsander123/netcup-cli/main/scripts/install-netcup-cli.sh | bash
+```
+
+The installer installs the CLI and man page. If the shell cannot find
+`netcup-cli`, add `~/.local/bin` to `PATH` and open a new shell. Check it with
+`netcup-cli --version`. See [Installation](docs/installation.md) for source and
+development installs.
 
 ## Update
 
@@ -33,6 +38,10 @@ netcup-cli start Mia
 netcup-cli stop Mia
 netcup-cli reset Mia    # Hard reboot
 ```
+
+`login` opens a browser-based sign-in and saves the SCP refresh token locally.
+Check status with `netcup-cli whoami`; `netcup-cli logout` removes the local
+token. SCP login is for server and SCP API commands.
 
 ## OS Images & Reinstall
 
@@ -97,7 +106,10 @@ netcup-cli iso list Mia                # netcup-provided ISOs
 netcup-cli iso attach Mia --iso-id 80  # or --user-iso <name>
 netcup-cli iso detach Mia
 netcup-cli disks list Mia
-netcup-cli metrics cpu|disk|network|packets Mia --hours 6 --last 20
+netcup-cli metrics cpu Mia --hours 6 --last 20
+netcup-cli metrics disk Mia --hours 6 --last 20
+netcup-cli metrics network Mia --hours 6 --last 20
+netcup-cli metrics packets Mia --hours 6 --last 20
 netcup-cli logs Mia --limit 10
 netcup-cli user-image Mia <image-name> # install an uploaded image
 ```
@@ -127,16 +139,31 @@ netcup-cli rdns ipv6 get 2a06::1
 
 ## Domain DNS (CCP)
 
-SCP login and CCP DNS authentication are independent. Configure only the DNS APIs you use:
+CCP DNS uses separate credentials from SCP login. Choose the setup command for
+the DNS API and commands you plan to use:
 
 ```bash
-netcup-cli dns auth set legacy  # customer number, Legacy API key and password
-netcup-cli dns auth set rest    # CloudDNS REST API key
-netcup-cli dns auth set ddns    # CloudDNS Dynamic DNS token
-netcup-cli dns auth show        # configuration status, never secret values
+netcup-cli dns auth set legacy # classic zone and records
+netcup-cli dns auth set rest   # CloudDNS domains, ACME, changesets, revisions
+netcup-cli dns auth set ddns   # CloudDNS Dynamic DNS updates
+netcup-cli dns auth show       # status only; never prints secrets
 ```
 
-Each setup command prompts privately for secrets and saves CCP credentials separately in `ccp-credentials.json` (mode 0600). Automation can instead set `NETCUP_CCP_CUSTOMER_NUMBER`, `NETCUP_CCP_LEGACY_API_KEY`, `NETCUP_CCP_LEGACY_API_PASSWORD`, `NETCUP_API_KEY`, or `NETCUP_DDNS_TOKEN`. Environment values override stored CCP values without being saved. `dns auth clear legacy|rest|ddns|all` removes only saved CCP settings; SCP login is unaffected.
+Legacy setup asks for your CCP customer number, Legacy API key, and Legacy API
+password. REST setup asks for a CloudDNS REST API key; Dynamic DNS asks for its
+token. Prompts hide secret input and save it in a separate
+`ccp-credentials.json` file with mode `0600`. `dns auth clear
+legacy|rest|ddns|all` removes saved CCP credentials; `netcup-cli logout` only
+removes the SCP login.
+
+For scripts, provide the relevant variables instead of saving secrets:
+`NETCUP_CCP_CUSTOMER_NUMBER`, `NETCUP_CCP_LEGACY_API_KEY`,
+`NETCUP_CCP_LEGACY_API_PASSWORD`, `NETCUP_API_KEY`, or `NETCUP_DDNS_TOKEN`.
+Environment values override saved CCP values and are not written to disk. Both
+credential files are under `~/.config/netcup-cli/`, or under
+`$XDG_CONFIG_HOME/netcup-cli/` when `XDG_CONFIG_HOME` is set. See
+[Authentication](docs/authentication.md) and
+[Configuration](docs/configuration.md) for the full setup guide.
 
 ```bash
 netcup-cli dns domains list                     # paginated account domains
