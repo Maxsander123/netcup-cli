@@ -210,15 +210,16 @@ class NetcupDnsApiClient:
         for domain in domains:
             if isinstance(domain, dict) and isinstance(domain.get("fqdn"), str):
                 try:
-                    if _fqdn(domain["fqdn"]) == name:
-                        if (isinstance(domain.get("id"), bool)
-                                or not isinstance(domain.get("id"), int)
-                                or domain["id"] < 1
-                                or not isinstance(domain.get("isDnsManaged"), bool)):
-                            raise CLIError("Netcup REST DNS domain lookup omitted its ID or DNS backend status.")
-                        return domain
+                    domain_name = _fqdn(domain["fqdn"])
                 except CLIError:
                     continue
+                if domain_name == name:
+                    if (isinstance(domain.get("id"), bool)
+                            or not isinstance(domain.get("id"), int)
+                            or domain["id"] < 1
+                            or not isinstance(domain.get("isDnsManaged"), bool)):
+                        raise CLIError("Netcup REST DNS domain lookup omitted its ID or DNS backend status.")
+                    return domain
         raise CLIError("Domain was not found in this Netcup account. Check the FQDN and API key access.")
 
     def list_acme_challenges(self, domain_id: int) -> dict[str, Any]:
