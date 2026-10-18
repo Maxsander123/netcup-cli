@@ -9,10 +9,11 @@ netcup\-cli \- Command\-line client for Netcup SCP servers and CCP DNS
 .SH DESCRIPTION
 .B netcup\-cli
 manages Netcup VPS servers via the SCP REST API and domain DNS via the CCP APIs.
-Authentication uses the OIDC device\-code flow — no password is required.
-Credentials (refresh token) are stored in
+SCP authentication uses the OIDC device\-code flow; no SCP password is required.
+The SCP refresh token is stored in
 .I ~/.config/netcup\-cli/credentials.json
-(mode 0600).
+(mode 0600). CCP DNS uses separate Legacy API credentials, REST API key, or
+DynDNS token, depending on the command.
 .SH GLOBAL OPTIONS
 .TP
 .B \-\-json
@@ -155,7 +156,7 @@ Prompt privately for the selected CCP credentials and save them separately from 
 Remove saved CCP credentials in the selected scope. Environment overrides remain active.
 .TP
 .BI "netcup\-cli dns domains get " FQDN
-Look up one domain and report its DNS backend. Unicode names are normalized to ASCII IDN form.
+Look up one domain and report CloudDNS management status. A false status does not establish Legacy eligibility. Unicode names are normalized to ASCII IDN form.
 .TP
 .B netcup\-cli dns record\-types list
 List supported REST DNS record types. This public operation has no API key requirement.

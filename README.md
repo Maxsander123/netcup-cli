@@ -139,7 +139,7 @@ netcup-cli dns auth show        # configuration status, never secret values
 Each setup command prompts privately for secrets and saves CCP credentials separately in `ccp-credentials.json` (mode 0600). Automation can instead set `NETCUP_CCP_CUSTOMER_NUMBER`, `NETCUP_CCP_LEGACY_API_KEY`, `NETCUP_CCP_LEGACY_API_PASSWORD`, `NETCUP_API_KEY`, or `NETCUP_DDNS_TOKEN`. Environment values override stored CCP values without being saved. `dns auth clear legacy|rest|ddns|all` removes only saved CCP settings; SCP login is unaffected.
 
 ```bash
-netcup-cli dns domains get bücher.example       # exact FQDN lookup; reports DNS backend
+netcup-cli dns domains get bücher.example       # exact FQDN lookup; reports CloudDNS status
 netcup-cli dns zone get example.com              # classic DNS via Legacy CCP
 netcup-cli dns records list example.com          # classic DNS via Legacy CCP
 netcup-cli dns records update example.com --file records.json --yes

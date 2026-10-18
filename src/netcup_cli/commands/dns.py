@@ -73,17 +73,19 @@ def _legacy() -> LegacyDnsClient:
 
 
 def _rest(*, public: bool = False) -> NetcupDnsApiClient:
+    if public:
+        return NetcupDnsApiClient("")
     key = _credentials().rest_api_key
-    if not public and not key:
+    if not key:
         raise CLIError("CloudDNS REST needs NETCUP_API_KEY or 'dns auth set rest'.")
-    return NetcupDnsApiClient(key or "")
+    return NetcupDnsApiClient(key)
 
 
 def _cloud_domain(client: NetcupDnsApiClient, fqdn: str) -> tuple[int, str]:
     name = _fqdn(fqdn)
     domain = client.get_domain(name)
     if not domain["isDnsManaged"]:
-        raise CLIError(f"{name} is not managed by CloudDNS according to the REST API. Use the explicit Legacy DNS commands for classic DNS domains.")
+        raise CLIError(f"{name} is not CloudDNS-managed according to the REST API. Legacy DNS eligibility is unverified; check the domain's DNS backend before using Legacy commands.")
     return domain["id"], name
 
 
@@ -228,9 +230,9 @@ def domains_group() -> None:
 @click.argument("fqdn")
 @click.pass_context
 def domain_get(ctx: click.Context, fqdn: str) -> None:
-    """Get a domain and its DNS backend eligibility."""
+    """Get a domain and its CloudDNS status; Legacy eligibility is unverified."""
     domain = _rest().get_domain(_fqdn(fqdn))
-    _show(ctx, {**domain, "dnsBackend": "CloudDNS" if domain["isDnsManaged"] else "classic DNS / Legacy API"})
+    _show(ctx, {**domain, "dnsBackend": "CloudDNS" if domain["isDnsManaged"] else "not CloudDNS; Legacy eligibility unverified"})
 
 
 @dns_group.group("record-types")
