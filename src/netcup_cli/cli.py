@@ -17,6 +17,7 @@ from netcup_cli.safety import confirm_action
 
 # Advanced subgroups
 from netcup_cli.commands.disks import disks_group
+from netcup_cli.commands.dns import dns_group
 from netcup_cli.commands.images import server_iso_group, server_user_image
 from netcup_cli.commands.metrics import metrics_group
 from netcup_cli.commands.misc import api_group, maintenance_group
@@ -628,6 +629,7 @@ def ssh_key_delete(ctx: click.Context, key_id: str, yes: bool) -> None:
 # ── advanced subgroups ────────────────────────────────────────────────────────
 
 cli.add_command(rdns_group)
+cli.add_command(dns_group)
 cli.add_command(tasks_group)
 cli.add_command(users_group)
 cli.add_command(vlans_group)

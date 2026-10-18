@@ -1,6 +1,6 @@
 # netcup-cli
 
-Command-line client for the [Netcup Server Control Panel (SCP) REST API](https://www.servercontrolpanel.de/).
+Command-line client for the [Netcup Server Control Panel (SCP) REST API](https://www.servercontrolpanel.de/) and Customer Control Panel DNS APIs.
 
 ## Installation
 
@@ -125,6 +125,36 @@ netcup-cli rdns ipv4 delete 1.2.3.4
 netcup-cli rdns ipv6 get 2a06::1
 ```
 
+## Domain DNS (CCP)
+
+SCP login and CCP DNS authentication are independent. Configure only the DNS APIs you use:
+
+```bash
+netcup-cli dns auth set legacy  # customer number, Legacy API key and password
+netcup-cli dns auth set rest    # CloudDNS REST API key
+netcup-cli dns auth set ddns    # CloudDNS Dynamic DNS token
+netcup-cli dns auth show        # configuration status, never secret values
+```
+
+Each setup command prompts privately for secrets and saves CCP credentials separately in `ccp-credentials.json` (mode 0600). Automation can instead set `NETCUP_CCP_CUSTOMER_NUMBER`, `NETCUP_CCP_LEGACY_API_KEY`, `NETCUP_CCP_LEGACY_API_PASSWORD`, `NETCUP_API_KEY`, or `NETCUP_DDNS_TOKEN`. Environment values override stored CCP values without being saved. `dns auth clear legacy|rest|ddns|all` removes only saved CCP settings; SCP login is unaffected.
+
+```bash
+netcup-cli dns domains get bücher.example       # exact FQDN lookup; reports DNS backend
+netcup-cli dns zone get example.com              # classic DNS via Legacy CCP
+netcup-cli dns records list example.com          # classic DNS via Legacy CCP
+netcup-cli dns records update example.com --file records.json --yes
+netcup-cli dns record-types list                  # public REST operation
+netcup-cli dns acme list example.com             # CloudDNS via REST
+netcup-cli dns changeset apply example.com --file changeset.json --yes
+netcup-cli dns revisions list example.com
+netcup-cli dns revisions create example.com --yes
+netcup-cli dns revisions records add example.com <revision-uuid> --file record.json --yes
+netcup-cli dns revisions commit example.com <revision-uuid> --yes
+netcup-cli dns ddns update home.example.com --ipv4 192.0.2.10 --ipv6 2001:db8::10 --yes
+```
+
+Classic DNS zone and record commands use the Legacy CCP API; CloudDNS ACME, changesets, and revisions use the REST API. Writes never switch backends automatically. Domain names are accepted in Unicode and sent in ASCII IDN form. Dynamic DNS updates only A and/or AAAA records on a CloudDNS-managed domain. Every DNS write asks for confirmation; use `--yes` for scripts. These APIs do not expose domain reseller, registration, transfer, or contact-handle commands. See [DNS command details](docs/commands.md#dns) and [API coverage](docs/api-coverage.md#customer-control-panel-ccp-dns).
+
 ## Tasks
 
 ```bash
@@ -166,6 +196,7 @@ netcup-cli install Mia --image 1234 --yes
 | `snapshot` | Manage snapshots |
 | `ssh-key` | Manage SSH public keys |
 | `rdns` | Manage reverse DNS |
+| `dns` | Manage CCP classic DNS, CloudDNS and Dynamic DNS |
 | `tasks` | Manage async tasks |
 | `users` | User account, failover IPs, firewall policies |
 | `set` `power` `rescue` `iso` `disks` `interfaces` `metrics` `logs` `guest-agent` `user-image` `optimize-storage` | More server operations |

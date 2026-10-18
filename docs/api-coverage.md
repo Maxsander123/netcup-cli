@@ -108,11 +108,11 @@ Total operations: 87
 
 ## Customer Control Panel (CCP) DNS
 
-The [Netcup REST OpenAPI snapshot](netcup-rest-openapi.json) was fetched from [Netcup's public endpoint](https://api.netcup.com/v1/openapi.json) on 2026-10-18. It declares OpenAPI 3.1.0, API version `2026.0921.153936`, and server `https://api.netcup.com`. SHA-256: `e3e59aab819643e64a2b596c588e48e3f2e729adce022608e73efc71c967a844`. The paths below include `/v1`; clients must not prepend `/v1` twice. The 17 REST operations have named client methods in `src/netcup_cli/netcup_dns_api.py`. This table remains an **intended CLI mapping** until the DNS commands are added.
+The [Netcup REST OpenAPI snapshot](netcup-rest-openapi.json) was fetched from [Netcup's public endpoint](https://api.netcup.com/v1/openapi.json) on 2026-10-18. It declares OpenAPI 3.1.0, API version `2026.0921.153936`, and server `https://api.netcup.com`. SHA-256: `e3e59aab819643e64a2b596c588e48e3f2e729adce022608e73efc71c967a844`. The paths below include `/v1`; clients must not prepend `/v1` twice. The 17 REST operations have named client methods in `src/netcup_cli/netcup_dns_api.py` and commands in `src/netcup_cli/commands/dns.py`.
 
 The snapshot declares no security requirement for `GET /v1/dns/recordType`, so the client calls it without an Authorization header. The other 16 operations declare bearer authentication with a Netcup REST API key. `domainId` is an integer of at least 1. `revisionId` and `recordId` are UUIDs. All parameters not identified as optional below are required. The `GET /v1/domain` operation is a filtered domain lookup here: `dns domains get <fqdn>` supplies the optional `fqdn` query filter and selects the matching domain. It is not an account-wide list command.
 
-| Method | REST path | Required path/query and JSON body | Intended CLI command |
+| Method | REST path | Required path/query and JSON body | CLI command |
 |---|---|---|---|
 | GET | `/v1/dns/recordType` | None | `dns record-types list` |
 | GET | `/v1/domain` | Query `fqdn` for CLI lookup; API also permits optional `domainId`, `field` (`domainId` or `fqdn`), `direction` (`asc` or `desc`), `page`, `perPage`. No body. | `dns domains get <fqdn>` |
@@ -138,7 +138,7 @@ The snapshot declares no security requirement for `GET /v1/dns/recordType`, so t
 
 Netcup's [Legacy API documentation](https://www.netcup.com/en/helpcenter/documentation/domain/our-api) lists the six DNS/session actions below. The parameter names were checked against its [public WSDL](https://ccp.netcup.net/run/webservice/servers/endpoint.php?WSDL). All are JSON `POST` requests to `https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON`, with top-level `action` and `param` keys. The WSDL also lists `clientrequestid` on each action for request tracking; it is omitted from the core input summary below. `apisessionid` is returned by `login` and used only for the scoped session.
 
-| Action | Required `param` keys | Intended CLI command |
+| Action | Required `param` keys | CLI command |
 |---|---|---|
 | `login` | `customernumber`, `apikey`, `apipassword` | Internal session setup for Legacy DNS commands |
 | `logout` | `customernumber`, `apikey`, `apisessionid` | Internal session cleanup after Legacy DNS commands |
@@ -149,4 +149,4 @@ Netcup's [Legacy API documentation](https://www.netcup.com/en/helpcenter/documen
 
 ### Coverage boundary
 
-All 17 operations in this REST snapshot are DNS or domain lookup operations and appear above. It contains **no non-DNS REST operations**; any such operations introduced in a later schema are outside this DNS feature until separately reviewed. Domain lookup is included solely to resolve a supplied FQDN and determine DNS eligibility. The Legacy CCP reseller actions `createDomain`, `updateDomain`, `transferDomain`, `changeOwnerDomain`, `cancelDomain`, `infoDomain`, `getAuthcodeDomain`, `listallDomains`, `createHandle`, `updateHandle`, `deleteHandle`, `infoHandle`, `listallHandle`, `priceTopleveldomain`, `poll`, and `ackpoll` are all outside scope. They manage domain ownership, commercial lifecycle, contacts, reseller pricing, or reseller messages rather than DNS zone records, and some require a reseller contract. The shared `login` and `logout` actions are used only to scope the DNS calls. No reseller action maps to a CLI command here. CloudDNS Dynamic DNS uses a separate endpoint and token, so it is not represented by this REST OpenAPI snapshot; its intended command is `dns ddns update <fqdn>`.
+All 17 operations in this REST snapshot are DNS or domain lookup operations and appear above. It contains **no non-DNS REST operations**; any such operations introduced in a later schema are outside this DNS feature until separately reviewed. Domain lookup is included solely to resolve a supplied FQDN and determine DNS eligibility. The Legacy CCP reseller actions `createDomain`, `updateDomain`, `transferDomain`, `changeOwnerDomain`, `cancelDomain`, `infoDomain`, `getAuthcodeDomain`, `listallDomains`, `createHandle`, `updateHandle`, `deleteHandle`, `infoHandle`, `listallHandle`, `priceTopleveldomain`, `poll`, and `ackpoll` are all outside scope. They manage domain ownership, commercial lifecycle, contacts, reseller pricing, or reseller messages rather than DNS zone records, and some require a reseller contract. The shared `login` and `logout` actions are used only to scope the DNS calls. No reseller action maps to a CLI command here. CloudDNS Dynamic DNS uses a separate endpoint and token, so it is not represented by this REST OpenAPI snapshot; its command is `dns ddns update <fqdn>`.

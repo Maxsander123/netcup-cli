@@ -1,6 +1,6 @@
 .TH NETCUP\-CLI 1 "October 2026" "netcup-cli 0.1.0" "User Commands"
 .SH NAME
-netcup\-cli \- Command\-line client for the Netcup Server Control Panel (SCP) REST API
+netcup\-cli \- Command\-line client for Netcup SCP servers and CCP DNS
 .SH SYNOPSIS
 .B netcup\-cli
 [\fB\-\-json\fR]
@@ -8,7 +8,7 @@ netcup\-cli \- Command\-line client for the Netcup Server Control Panel (SCP) RE
 \fICOMMAND\fR [\fIARGS\fR]...
 .SH DESCRIPTION
 .B netcup\-cli
-manages Netcup VPS servers via the SCP REST API.
+manages Netcup VPS servers via the SCP REST API and domain DNS via the CCP APIs.
 Authentication uses the OIDC device\-code flow — no password is required.
 Credentials (refresh token) are stored in
 .I ~/.config/netcup\-cli/credentials.json
@@ -143,6 +143,56 @@ Manage IPv4 reverse DNS.
 .TP
 .B netcup\-cli rdns ipv6 get|set|delete \fIIP\fR
 Manage IPv6 reverse DNS.
+.SS Domain DNS (CCP)
+.TP
+.B netcup\-cli dns auth show
+Show which Legacy, REST and DynDNS credential groups are configured, without printing secret values.
+.TP
+.B netcup\-cli dns auth set legacy|rest|ddns
+Prompt privately for the selected CCP credentials and save them separately from SCP login.
+.TP
+.B netcup\-cli dns auth clear legacy|rest|ddns|all [\-\-yes]
+Remove saved CCP credentials in the selected scope. Environment overrides remain active.
+.TP
+.BI "netcup\-cli dns domains get " FQDN
+Look up one domain and report its DNS backend. Unicode names are normalized to ASCII IDN form.
+.TP
+.B netcup\-cli dns record\-types list
+List supported REST DNS record types. This public operation has no API key requirement.
+.TP
+.BI "netcup\-cli dns zone get|update " DOMAIN
+Read or update classic DNS zone settings through the Legacy CCP API. Updates require
+.B \-\-file
+with a JSON object for `dnszone` and confirmation or
+.BR \-\-yes .
+.TP
+.BI "netcup\-cli dns records list|update " DOMAIN
+Read or update classic DNS records through the Legacy CCP API. Updates require a JSON object for `dnsrecordset` in
+.B \-\-file
+and confirmation or
+.BR \-\-yes .
+.TP
+.BI "netcup\-cli dns acme list|add|get|delete " FQDN
+Manage CloudDNS ACME challenges. Add/get/delete also take scope and a 43-character base64url value.
+.TP
+.BI "netcup\-cli dns changeset apply " FQDN " \-\-file " FILE
+Apply a CloudDNS changeset with boolean `autoCommit` and `strict` and optional `create` and `delete` record arrays.
+.TP
+.BI "netcup\-cli dns revisions list|create|get|delete|commit " FQDN
+Manage CloudDNS revisions. Get/delete/commit also take a revision UUID. List supports sort and paging options.
+.TP
+.BI "netcup\-cli dns revisions changeset apply " FQDN " " REVISION_UUID " \-\-file " FILE
+Apply a changeset to a revision. Commit it separately when ready.
+.TP
+.BI "netcup\-cli dns revisions records list|add|get|delete " FQDN " " REVISION_UUID
+Manage records within a revision. Add requires a JSON file with `name`, `type`, `rdata`, and positive `ttl`; get/delete also take a record UUID.
+.TP
+.BI "netcup\-cli dns ddns update " FQDN " [\-\-ipv4 " ADDRESS "] [\-\-ipv6 " ADDRESS "] [\-\-yes]"
+Update CloudDNS A and/or AAAA records. At least one IP address is required.
+.PP
+Every DNS write requires confirmation in a terminal or
+.B \-\-yes
+for scripts. CloudDNS REST writes require a CloudDNS-managed domain and never switch to the Legacy API. Dynamic DNS updates only A/AAAA records. Domain reseller, registration, transfer and contact-handle operations are not provided. See the command reference and API coverage documentation for the complete command tree.
 .SS Tasks
 .TP
 .B netcup\-cli tasks list|get|cancel
@@ -178,6 +228,9 @@ Print Fish completion script.
 .TP
 .I ~/.config/netcup\-cli/credentials.json
 Stored refresh token (mode 0600). Never contains passwords or access tokens.
+.TP
+.I ~/.config/netcup\-cli/ccp\-credentials.json
+Separate Legacy CCP, REST API and DynDNS credentials (mode 0600).
 .SH ENVIRONMENT
 .TP
 .B NETCUP_OIDC_CLIENT_ID
@@ -186,6 +239,15 @@ Override the OIDC client ID (default:
 .TP
 .B XDG_CONFIG_HOME
 Override the base directory for credential storage.
+.TP
+.B NETCUP_CCP_CUSTOMER_NUMBER, NETCUP_CCP_LEGACY_API_KEY, NETCUP_CCP_LEGACY_API_PASSWORD
+Legacy CCP credentials. Environment values override saved CCP values.
+.TP
+.B NETCUP_API_KEY
+Netcup CloudDNS REST bearer key.
+.TP
+.B NETCUP_DDNS_TOKEN
+CloudDNS Dynamic DNS token.
 .SH EXAMPLES
 .nf
 # First login
