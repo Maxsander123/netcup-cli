@@ -1,5 +1,9 @@
 # API Coverage
 
+## Server Control Panel (SCP)
+
+The repository-root `openapi.json` is the SCP contract. Its existing command inventory follows. The separate CCP DNS contract and proposed command mapping are below it.
+
 OpenAPI snapshot version: `2026.0923.125530`  
 Total operations: 87
 
@@ -101,3 +105,48 @@ Total operations: 87
 | `servers power` | POST /servers/{serverId}/power |
 | `users images upload` | prepare-upload + get-part-url (×N) + complete-upload (or prepare-upload + presigned PUT) |
 | `users isos upload` | prepare-upload + get-part-url (×N) + complete-upload (or prepare-upload + presigned PUT) |
+
+## Customer Control Panel (CCP) DNS
+
+The [Netcup REST OpenAPI snapshot](netcup-rest-openapi.json) was fetched from [Netcup's public endpoint](https://api.netcup.com/v1/openapi.json) on 2026-10-18. It declares OpenAPI 3.1.0, API version `2026.0921.153936`, and server `https://api.netcup.com`. SHA-256: `e3e59aab819643e64a2b596c588e48e3f2e729adce022608e73efc71c967a844`. The paths below include `/v1`; clients must not prepend `/v1` twice. This is an **operation inventory and intended CLI mapping**, not a claim that these commands are implemented yet.
+
+REST requests use a bearer API key. `domainId` is an integer of at least 1. `revisionId` and `recordId` are UUIDs. All parameters not identified as optional below are required. The `GET /v1/domain` operation is a filtered domain lookup here: `dns domains get <fqdn>` supplies the optional `fqdn` query filter and selects the matching domain. It is not an account-wide list command.
+
+| Method | REST path | Required path/query and JSON body | Intended CLI command |
+|---|---|---|---|
+| GET | `/v1/dns/recordType` | None | `dns record-types list` |
+| GET | `/v1/domain` | Query `fqdn` for CLI lookup; API also permits optional `domainId`, `field` (`domainId` or `fqdn`), `direction` (`asc` or `desc`), `page`, `perPage`. No body. | `dns domains get <fqdn>` |
+| GET | `/v1/domain/{domainId}/acme/challenge` | Path `domainId`; no body. | `dns acme list <fqdn>` |
+| POST | `/v1/domain/{domainId}/acme/challenge` | Path `domainId`; required JSON `scope` (`@` or hostname label), `value` (43 characters matching `[A-Za-z0-9_-]`). | `dns acme add <fqdn> <scope> <value>` |
+| GET | `/v1/domain/{domainId}/acme/challenge/{scope}/{value}` | Path `domainId`, `scope`, `value`; no body. | `dns acme get <fqdn> <scope> <value>` |
+| DELETE | `/v1/domain/{domainId}/acme/challenge/{scope}/{value}` | Path `domainId`, `scope`, `value`; no body. | `dns acme delete <fqdn> <scope> <value>` |
+| POST | `/v1/domain/{domainId}/changeset` | Path `domainId`; required JSON `autoCommit` and `strict` booleans; optional `create` and `delete` arrays of `DnsRecordInput`. | `dns changeset apply <fqdn> --file <json>` |
+| GET | `/v1/domain/{domainId}/dns/revision` | Path `domainId`; optional query `field`, `direction` (`asc` or `desc`), `page`, `perPage`; no body. | `dns revisions list <fqdn>` |
+| POST | `/v1/domain/{domainId}/dns/revision` | Path `domainId`; no body. | `dns revisions create <fqdn>` |
+| GET | `/v1/domain/{domainId}/dns/revision/{revisionId}` | Path `domainId`, `revisionId`; no body. | `dns revisions get <fqdn> <revision-id>` |
+| DELETE | `/v1/domain/{domainId}/dns/revision/{revisionId}` | Path `domainId`, `revisionId`; no body. | `dns revisions delete <fqdn> <revision-id>` |
+| POST | `/v1/domain/{domainId}/dns/revision/{revisionId}/changeset` | Path `domainId`, `revisionId`; required JSON `autoCommit` and `strict` booleans; optional `create` and `delete` arrays of `DnsRecordInput`. | `dns revisions changeset apply <fqdn> <revision-id> --file <json>` |
+| POST | `/v1/domain/{domainId}/dns/revision/{revisionId}/commit` | Path `domainId`, `revisionId`; no body. | `dns revisions commit <fqdn> <revision-id>` |
+| GET | `/v1/domain/{domainId}/dns/revision/{revisionId}/record` | Path `domainId`, `revisionId`; no body. | `dns revisions records list <fqdn> <revision-id>` |
+| POST | `/v1/domain/{domainId}/dns/revision/{revisionId}/record` | Path `domainId`, `revisionId`; required JSON `name`, `type`, `rdata`, `ttl` (integer at least 1). | `dns revisions records add <fqdn> <revision-id> --file <json>` |
+| GET | `/v1/domain/{domainId}/dns/revision/{revisionId}/record/{recordId}` | Path `domainId`, `revisionId`, `recordId`; no body. | `dns revisions records get <fqdn> <revision-id> <record-id>` |
+| DELETE | `/v1/domain/{domainId}/dns/revision/{revisionId}/record/{recordId}` | Path `domainId`, `revisionId`, `recordId`; no body. | `dns revisions records delete <fqdn> <revision-id> <record-id>` |
+
+`DnsRecordInput` requires `name`, `type`, `rdata`, and `ttl`. The schema defines the permitted record types as `A`, `AAAA`, `CAA`, `CNAME`, `DS`, `MX`, `NS`, `OPENPGPKEY`, `SRV`, `SMIMEA`, `SSHFP`, `TLSA`, and `TXT`. The REST domain response includes `id`, `fqdn`, and `isDnsManaged`; domain lookup resolves the supplied FQDN to the `domainId` needed by the remaining operations. The OpenAPI schema does not describe a separate domain detail endpoint.
+
+### Legacy CCP JSON DNS actions
+
+Netcup's [Legacy API documentation](https://www.netcup.com/en/helpcenter/documentation/domain/our-api) lists the six DNS/session actions below. The parameter names were checked against its [public WSDL](https://ccp.netcup.net/run/webservice/servers/endpoint.php?WSDL). All are JSON `POST` requests to `https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON`, with top-level `action` and `param` keys. The WSDL also lists `clientrequestid` on each action for request tracking; it is omitted from the core input summary below. `apisessionid` is returned by `login` and used only for the scoped session.
+
+| Action | Required `param` keys | Intended CLI command |
+|---|---|---|
+| `login` | `customernumber`, `apikey`, `apipassword` | Internal session setup for Legacy DNS commands |
+| `logout` | `customernumber`, `apikey`, `apisessionid` | Internal session cleanup after Legacy DNS commands |
+| `infoDnsZone` | `customernumber`, `apikey`, `apisessionid`, `domainname` | `dns zone get <domain>` |
+| `infoDnsRecords` | `customernumber`, `apikey`, `apisessionid`, `domainname` | `dns records list <domain>` |
+| `updateDnsZone` | `customernumber`, `apikey`, `apisessionid`, `domainname`, `dnszone` | `dns zone update <domain> --file <json>` |
+| `updateDnsRecords` | `customernumber`, `apikey`, `apisessionid`, `domainname`, `dnsrecordset` | `dns records update <domain> --file <json>` |
+
+### Coverage boundary
+
+All 17 operations in this REST snapshot are DNS or domain lookup operations and appear above. It contains **no non-DNS REST operations**; any such operations introduced in a later schema are outside this DNS feature until separately reviewed. Domain lookup is included solely to resolve a supplied FQDN and determine DNS eligibility. The Legacy CCP reseller actions `createDomain`, `updateDomain`, `transferDomain`, `changeOwnerDomain`, `cancelDomain`, `infoDomain`, `getAuthcodeDomain`, `listallDomains`, `createHandle`, `updateHandle`, `deleteHandle`, `infoHandle`, `listallHandle`, `priceTopleveldomain`, `poll`, and `ackpoll` are all outside scope. They manage domain ownership, commercial lifecycle, contacts, reseller pricing, or reseller messages rather than DNS zone records, and some require a reseller contract. The shared `login` and `logout` actions are used only to scope the DNS calls. No reseller action maps to a CLI command here. CloudDNS Dynamic DNS uses a separate endpoint and token, so it is not represented by this REST OpenAPI snapshot; its intended command is `dns ddns update <fqdn>`.
