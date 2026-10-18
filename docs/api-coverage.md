@@ -108,9 +108,9 @@ Total operations: 87
 
 ## Customer Control Panel (CCP) DNS
 
-The [Netcup REST OpenAPI snapshot](netcup-rest-openapi.json) was fetched from [Netcup's public endpoint](https://api.netcup.com/v1/openapi.json) on 2026-10-18. It declares OpenAPI 3.1.0, API version `2026.0921.153936`, and server `https://api.netcup.com`. SHA-256: `e3e59aab819643e64a2b596c588e48e3f2e729adce022608e73efc71c967a844`. The paths below include `/v1`; clients must not prepend `/v1` twice. This is an **operation inventory and intended CLI mapping**, not a claim that these commands are implemented yet.
+The [Netcup REST OpenAPI snapshot](netcup-rest-openapi.json) was fetched from [Netcup's public endpoint](https://api.netcup.com/v1/openapi.json) on 2026-10-18. It declares OpenAPI 3.1.0, API version `2026.0921.153936`, and server `https://api.netcup.com`. SHA-256: `e3e59aab819643e64a2b596c588e48e3f2e729adce022608e73efc71c967a844`. The paths below include `/v1`; clients must not prepend `/v1` twice. The 17 REST operations have named client methods in `src/netcup_cli/netcup_dns_api.py`. This table remains an **intended CLI mapping** until the DNS commands are added.
 
-REST requests use a bearer API key. `domainId` is an integer of at least 1. `revisionId` and `recordId` are UUIDs. All parameters not identified as optional below are required. The `GET /v1/domain` operation is a filtered domain lookup here: `dns domains get <fqdn>` supplies the optional `fqdn` query filter and selects the matching domain. It is not an account-wide list command.
+The snapshot declares no security requirement for `GET /v1/dns/recordType`, so the client calls it without an Authorization header. The other 16 operations declare bearer authentication with a Netcup REST API key. `domainId` is an integer of at least 1. `revisionId` and `recordId` are UUIDs. All parameters not identified as optional below are required. The `GET /v1/domain` operation is a filtered domain lookup here: `dns domains get <fqdn>` supplies the optional `fqdn` query filter and selects the matching domain. It is not an account-wide list command.
 
 | Method | REST path | Required path/query and JSON body | Intended CLI command |
 |---|---|---|---|
