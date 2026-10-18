@@ -50,8 +50,9 @@ _RECORD_TYPES = frozenset(
 def _fqdn(value: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise CLIError("Supply a valid domain name.")
+    unqualified = value[:-1] if value.endswith(".") else value
     try:
-        normalized = value.rstrip(".").encode("idna").decode("ascii").lower()
+        normalized = unqualified.encode("idna").decode("ascii").lower()
     except UnicodeError:
         raise CLIError("Supply a valid domain name.") from None
     labels = normalized.split(".")

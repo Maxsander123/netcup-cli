@@ -37,8 +37,9 @@ def _fqdn(value: str) -> str:
     """Normalize a complete Unicode DNS name for both CCP backends."""
     if not value or value != value.strip():
         raise CLIError("Supply a valid fully qualified domain name.")
+    unqualified = value[:-1] if value.endswith(".") else value
     try:
-        name = value.rstrip(".").encode("idna").decode("ascii").lower()
+        name = unqualified.encode("idna").decode("ascii").lower()
     except UnicodeError:
         raise CLIError("Supply a valid fully qualified domain name.") from None
     labels = name.split(".")
