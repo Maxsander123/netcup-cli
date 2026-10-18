@@ -7,7 +7,8 @@ response envelope; ``get_domain`` resolves one supplied FQDN to a domain.
 Method/path mapping (``{d}``, ``{r}``, ``{i}`` mean domain, revision, record ID):
 
 * ``GET /v1/dns/recordType``: ``list_record_types``
-* ``GET /v1/domain``: ``get_domain`` (filtered by ``fqdn``)
+* ``GET /v1/domain``: ``list_domains`` (optional filters), ``get_domain``
+  (filtered by ``fqdn``)
 * ``GET, POST /v1/domain/{d}/acme/challenge``: ``list_acme_challenges``,
   ``create_acme_challenge``
 * ``GET, DELETE /v1/domain/{d}/acme/challenge/{scope}/{value}``:
@@ -200,6 +201,22 @@ class NetcupDnsApiClient:
 
     def list_record_types(self) -> dict[str, Any]:
         return self._request("GET", "/v1/dns/recordType", "record type list", authenticated=False)
+
+    def list_domains(self, *, domain_id: int | None = None, fqdn: str | None = None,
+                     field: str | None = None, direction: str | None = None,
+                     page: int | None = None, per_page: int | None = None) -> dict[str, Any]:
+        """List account domains using only supplied OpenAPI query parameters."""
+        if field is not None and field not in ("domainId", "fqdn"):
+            raise CLIError("Domain sort field must be domainId or fqdn.")
+        params = _query(field=field, direction=direction, page=page, per_page=per_page)
+        if domain_id is not None:
+            params["domainId"] = _domain_id(domain_id)
+        if fqdn is not None:
+            params["fqdn"] = _fqdn(fqdn)
+        response = self._request("GET", "/v1/domain", "domain list", params=params or None)
+        if not isinstance(response, dict) or not isinstance(response.get("result"), list):
+            raise CLIError("Netcup REST DNS domain list returned an invalid result.")
+        return response
 
     def get_domain(self, fqdn: str) -> dict[str, Any]:
         """Resolve an exact, supplied FQDN via the filtered domain operation."""

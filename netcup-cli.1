@@ -155,6 +155,11 @@ Prompt privately for the selected CCP credentials and save them separately from 
 .B netcup\-cli dns auth clear legacy|rest|ddns|all [\-\-yes]
 Remove saved CCP credentials in the selected scope. Environment overrides remain active.
 .TP
+.B netcup\-cli dns domains list [\-\-domain\-id ID] [\-\-fqdn FQDN] [\-\-field domainId|fqdn] [\-\-direction asc|desc] [\-\-page N] [\-\-per\-page N]
+List account domains from the REST API. All filters are optional; IDs and page values must be positive integers. Normal output is a table; global
+.B \-\-json
+includes pagination metadata.
+.TP
 .BI "netcup\-cli dns domains get " FQDN
 Look up one domain and report CloudDNS management status. A false status does not establish Legacy eligibility. Unicode names are normalized to ASCII IDN form.
 .TP

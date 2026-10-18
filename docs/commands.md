@@ -50,6 +50,7 @@ netcup-cli dns auth set rest [--yes]
 netcup-cli dns auth set ddns [--yes]
 netcup-cli dns auth clear legacy|rest|ddns|all [--yes]
 
+netcup-cli dns domains list [--domain-id ID] [--fqdn FQDN] [--field domainId|fqdn] [--direction asc|desc] [--page N] [--per-page N]
 netcup-cli dns domains get <fqdn>
 netcup-cli dns record-types list
 
@@ -80,7 +81,7 @@ netcup-cli dns ddns update <fqdn> [--ipv4 ADDRESS] [--ipv6 ADDRESS] [--yes]
 
 The Legacy `zone update` file must be a JSON object used as `dnszone`; `records update` must be a JSON object used as `dnsrecordset`. Obtain the current structure with `zone get` or `records list`, edit it, then submit it. For CloudDNS, a changeset file contains boolean `autoCommit` and `strict`, with optional `create` and `delete` arrays. Each record input needs `name`, `type`, `rdata`, and positive integer `ttl`; for example `{"name":"www","type":"A","rdata":"192.0.2.10","ttl":300}`. Create a revision, edit its records or apply a changeset, then commit the revision. IDs are UUIDs. ACME values are 43-character base64url strings; `scope` is `@` or a hostname label. Dynamic DNS needs at least one IP address and a DynDNS token.
 
-`dns domains get` resolves only the supplied FQDN. Its `isDnsManaged=true` result indicates CloudDNS management; `false` does not establish Legacy DNS eligibility. Check the domain's DNS backend before using Legacy commands. An account-wide domain list and domain reseller operations are outside the documented DNS API scope. The public record-type list needs no API key or saved credential file; the other REST operations use the bearer REST API key. Classic DNS requires the appropriate nameserver/backend setup, and CloudDNS commands require CloudDNS management for that domain.
+`dns domains list` retrieves a paginated account domain list. All six filters are optional; positive integers are required for `--domain-id`, `--page`, and `--per-page`. The usual display is a table of the current page; global `--json` prints the REST response including its `meta.pagination` data. `dns domains get` resolves only the supplied FQDN. Its `isDnsManaged=true` result indicates CloudDNS management; `false` does not establish Legacy DNS eligibility. Check the domain's DNS backend before using Legacy commands. Domain reseller operations are outside the documented DNS API scope. The public record-type list needs no API key or saved credential file; the other REST operations use the bearer REST API key. Classic DNS requires the appropriate nameserver/backend setup, and CloudDNS commands require CloudDNS management for that domain.
 
 ## servers
 

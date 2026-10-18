@@ -139,6 +139,8 @@ netcup-cli dns auth show        # configuration status, never secret values
 Each setup command prompts privately for secrets and saves CCP credentials separately in `ccp-credentials.json` (mode 0600). Automation can instead set `NETCUP_CCP_CUSTOMER_NUMBER`, `NETCUP_CCP_LEGACY_API_KEY`, `NETCUP_CCP_LEGACY_API_PASSWORD`, `NETCUP_API_KEY`, or `NETCUP_DDNS_TOKEN`. Environment values override stored CCP values without being saved. `dns auth clear legacy|rest|ddns|all` removes only saved CCP settings; SCP login is unaffected.
 
 ```bash
+netcup-cli dns domains list                     # paginated account domains
+netcup-cli dns domains list --field fqdn --direction asc --page 2 --per-page 20
 netcup-cli dns domains get bücher.example       # exact FQDN lookup; reports CloudDNS status
 netcup-cli dns zone get example.com              # classic DNS via Legacy CCP
 netcup-cli dns records list example.com          # classic DNS via Legacy CCP
@@ -153,7 +155,7 @@ netcup-cli dns revisions commit example.com <revision-uuid> --yes
 netcup-cli dns ddns update home.example.com --ipv4 192.0.2.10 --ipv6 2001:db8::10 --yes
 ```
 
-Classic DNS zone and record commands use the Legacy CCP API; CloudDNS ACME, changesets, and revisions use the REST API. Writes never switch backends automatically. Domain names are accepted in Unicode and sent in ASCII IDN form. Dynamic DNS updates only A and/or AAAA records on a CloudDNS-managed domain. Every DNS write asks for confirmation; use `--yes` for scripts. These APIs do not expose domain reseller, registration, transfer, or contact-handle commands. See [DNS command details](docs/commands.md#dns) and [API coverage](docs/api-coverage.md#customer-control-panel-ccp-dns).
+Classic DNS zone and record commands use the Legacy CCP API; domain listing, CloudDNS ACME, changesets, and revisions use the REST API. `dns domains list` accepts optional `--domain-id`, `--fqdn`, `--field domainId|fqdn`, `--direction asc|desc`, `--page`, and `--per-page` filters. Writes never switch backends automatically. Domain names are accepted in Unicode and sent in ASCII IDN form. Dynamic DNS updates only A and/or AAAA records on a CloudDNS-managed domain. Every DNS write asks for confirmation; use `--yes` for scripts. These APIs do not expose domain reseller, registration, transfer, or contact-handle commands. See [DNS command details](docs/commands.md#dns) and [API coverage](docs/api-coverage.md#customer-control-panel-ccp-dns).
 
 ## Tasks
 

@@ -224,7 +224,24 @@ def auth_clear(ctx: click.Context, scope: str, yes: bool) -> None:
 
 @dns_group.group("domains")
 def domains_group() -> None:
-    """Look up one supplied domain through CloudDNS REST."""
+    """List or look up domains through CloudDNS REST."""
+
+
+@domains_group.command("list")
+@click.option("--domain-id", type=click.IntRange(min=1), help="Filter by domain ID.")
+@click.option("--fqdn", help="Filter by a fully qualified domain name.")
+@click.option("--field", type=click.Choice(["domainId", "fqdn"]), help="Sort field.")
+@click.option("--direction", type=click.Choice(["asc", "desc"]), help="Sort direction.")
+@click.option("--page", type=click.IntRange(min=1), help="Page number.")
+@click.option("--per-page", type=click.IntRange(min=1), help="Entries per page.")
+@click.pass_context
+def domains_list(ctx: click.Context, domain_id: int | None, fqdn: str | None,
+                 field: str | None, direction: str | None, page: int | None,
+                 per_page: int | None) -> None:
+    """List account domains with optional filters and pagination."""
+    response = _rest().list_domains(domain_id=domain_id, fqdn=fqdn, field=field,
+                                    direction=direction, page=page, per_page=per_page)
+    _show(ctx, response if _json(ctx) else response["result"])
 
 
 @domains_group.command("get")

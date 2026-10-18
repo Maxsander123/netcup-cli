@@ -115,7 +115,7 @@ The snapshot declares no security requirement for `GET /v1/dns/recordType`, so t
 | Method | REST path | Required path/query and JSON body | CLI command |
 |---|---|---|---|
 | GET | `/v1/dns/recordType` | None | `dns record-types list` |
-| GET | `/v1/domain` | Optional query `domainId`, `fqdn`, `field` (`domainId` or `fqdn`), `direction` (`asc` or `desc`), `page`, `perPage`. No body. | `dns domains list [filters]`; `dns domains get <fqdn>` |
+| GET | `/v1/domain` | Optional query `domainId` (integer ≥1), `fqdn`, `field` (`domainId` or `fqdn`), `direction` (`asc` or `desc`), `page` (integer ≥1), `perPage` (integer ≥1). No body. | `dns domains list [--domain-id ID] [--fqdn FQDN] [--field domainId\|fqdn] [--direction asc\|desc] [--page N] [--per-page N]`; `dns domains get <fqdn>` |
 | GET | `/v1/domain/{domainId}/acme/challenge` | Path `domainId`; no body. | `dns acme list <fqdn>` |
 | POST | `/v1/domain/{domainId}/acme/challenge` | Path `domainId`; required JSON `scope` (`@` or hostname label), `value` (43 characters matching `[A-Za-z0-9_-]`). | `dns acme add <fqdn> <scope> <value>` |
 | GET | `/v1/domain/{domainId}/acme/challenge/{scope}/{value}` | Path `domainId`, `scope`, `value`; no body. | `dns acme get <fqdn> <scope> <value>` |
