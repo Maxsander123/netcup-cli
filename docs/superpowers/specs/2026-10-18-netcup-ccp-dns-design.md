@@ -21,7 +21,7 @@ The legacy API's JSON request format is used; SOAP is not added. The checked-in 
 
 Add a `dns` command group without changing existing SCP command names:
 
-- `dns domains list` and `dns domains get <domain>` show domains and indicate which backend can manage DNS.
+- `dns domains get <domain>` looks up a supplied domain and indicates which backend can manage DNS. A complete account-wide domain list is not promised because the documented non-reseller API surface does not establish such an operation.
 - `dns records list <domain>` and `dns records update <domain> --file <json>` provide read/update access to zones and records through the Legacy CCP API. `dns zone get|update` provides explicit zone configuration operations.
 - `dns acme list|add|delete <domain> ...` exposes the CloudDNS ACME challenge operations from the REST OpenAPI document.
 - `dns ddns update <fqdn>` updates one or both IP families using the CloudDNS Dynamic DNS endpoint.
@@ -48,7 +48,7 @@ Update README, command reference, installation/help text if needed, and add `doc
 ## Acceptance criteria
 
 1. All documented Legacy CCP DNS operations are available through named CLI commands; the API's login/logout lifecycle is handled safely.
-2. Every supported DNS operation in the checked-in Netcup REST OpenAPI snapshot maps to a named CLI command; a generic HTTP passthrough is not used.
+2. Every supported DNS operation in the checked-in Netcup REST OpenAPI snapshot maps to a named CLI command; a generic HTTP passthrough is not used. Domain lookup is by supplied domain name; no unsupported account-wide list command is added.
 3. CloudDNS DynDNS supports IPv4 only, IPv6 only, or both, and validates the supplied addresses.
 4. CCP DNS credentials are isolated from SCP OIDC credentials and from each other, stored with restrictive permissions, and never printed.
 5. DNS writes confirm interactively by default and support explicit `--yes` for automation.
