@@ -84,7 +84,7 @@
 
 **Interfaces:**
 - Produces: `NetcupDnsApiClient(api_key: str)` with named methods for domain lookup and every in-scope DNS operation inventoried from `docs/netcup-rest-openapi.json`; the raw request helper remains private.
-- Exposes domain lookup by supplied FQDN and named methods for all 17 DNS/domain lookup operations in the captured snapshot: record types, domain lookup, ACME challenges, changesets, DNS revisions, and revision records. No account-wide domain list operation is assumed.
+- Exposes the REST domain list with its documented filters and pagination, domain lookup by supplied FQDN, and named methods for all 17 DNS/domain lookup operations in the captured snapshot: record types, domains, ACME challenges, changesets, DNS revisions, and revision records.
 - Uses bearer authentication at `https://api.netcup.com/v1`, finite timeouts, and the existing `CLIError` pattern.
 
 - [ ] Implement REST transport and API error parsing using the current checked-in OpenAPI contract; do not add `/v1` twice because the paths in the schema already contain it.
@@ -117,11 +117,11 @@
 
 **Interfaces:**
 - Produces: a `dns_group` Click group registered as `netcup-cli dns`.
-- Command surface: `dns auth show|set|clear`; `dns domains get <fqdn>`; `dns record-types list`; `dns zone get|update`; `dns records list|update`; `dns acme list|add|get|delete`; `dns changeset apply`; `dns revisions list|create|get|delete`; `dns revisions changeset apply`; `dns revisions commit`; `dns revisions records list|add|get|delete`; `dns ddns update`.
+- Command surface: `dns auth show|set|clear`; `dns domains list|get`; `dns record-types list`; `dns zone get|update`; `dns records list|update`; `dns acme list|add|get|delete`; `dns changeset apply`; `dns revisions list|create|get|delete`; `dns revisions changeset apply`; `dns revisions commit`; `dns revisions records list|add|get|delete`; `dns ddns update`.
 - Mutating commands use `confirm_action(..., yes=yes)` and the existing global JSON output convention.
 
 - [ ] Implement `dns auth show|set|clear` for independent CCP credentials, with `set legacy`, `set rest`, and `set ddns` scopes. Prompt for secrets without echoing them; accept the documented environment overrides for non-interactive setup.
-- [ ] Implement `dns domains get <fqdn>` using Netcup REST lookup and present DNS backend eligibility clearly; do not add a full account-wide listing command.
+- [ ] Implement `dns domains list` with all documented query filters/pagination and `dns domains get <fqdn>` using Netcup REST lookup; present CloudDNS eligibility clearly without inferring Legacy eligibility.
 - [ ] Implement Legacy zone/record list and update commands with explicit JSON-file inputs for complex update bodies; use the Legacy API session scope from Task 3.
 - [ ] Implement all 17 REST commands from Task 1, including record-type listing, FQDN domain lookup, all ACME challenge operations, changeset apply, revision lifecycle, revision commit, and revision-record operations. Use the operation inventory's exact HTTP parameters and body schemas.
 - [ ] Implement `dns ddns update` with `--ipv4`, `--ipv6`, and `--yes`; require at least one address.
@@ -129,12 +129,42 @@
 - [ ] Update README, command reference, API coverage, and man page with credential setup, API/backend limits, IDN handling, DNS write confirmation, record/revision workflows, DDNS A/AAAA behavior, and the explicit absence of reseller operations. Distinguish the public record-type operation, which has no security declaration in the snapshot, from bearer-authenticated REST operations.
 - [ ] Review `netcup-cli --help` and DNS subcommand help locally, inspect docs against the snapshot, and commit the completed command/documentation changes.
 
-### Task 7: Review the complete change set
+### Task 7: Baseline review before domain-list follow-up
 
 **Files:**
-- Review: all files from Tasks 1–6
+- Review: all files from Tasks 1–6 (completed before the domain-list follow-up)
 
 - [ ] Compare every in-scope REST OpenAPI operation and Legacy DNS method with `docs/api-coverage.md` and the Click command tree.
 - [ ] Review secret-handling, session cleanup, backend mismatch, IDN/IP validation, and non-interactive confirmation paths listed in Review Focus.
-- [ ] Inspect the final diff for unintended changes to SCP behavior and confirm no authenticated Netcup API call was made.
+- [ ] Inspect the final diff for unintended changes to SCP behavior; record the user's explicit live read from `/v1/domain` separately from local/offline validation.
 - [ ] Commit any review corrections and leave the checkout clean.
+
+### Task 8: Expose the documented REST domain list
+
+**Files:**
+- Modify: `src/netcup_cli/netcup_dns_api.py`
+- Modify: `src/netcup_cli/commands/dns.py`
+- Modify: `README.md`
+- Modify: `docs/commands.md`
+- Modify: `docs/api-coverage.md`
+- Modify: `netcup-cli.1`
+- Update: this spec and plan to record the verified REST list operation.
+
+**Interfaces:**
+- Produces: named `NetcupDnsApiClient.list_domains(...)` and `netcup-cli dns domains list`.
+- Uses the already inventoried `GET /v1/domain` operation and only its documented query parameters: `domainId`, `fqdn`, `field`, `direction`, `page`, and `perPage`.
+
+- [ ] Implement argument validation and pass only supplied filters to the existing private REST transport.
+- [ ] Expose the command using normal JSON/table output and bearer credentials; it is read-only and must not prompt.
+- [ ] Update coverage and user documentation and review local help/diff. Do not make further live API calls or run tests.
+- [ ] Commit the change.
+
+### Task 9: Final whole-branch review
+
+**Files:**
+- Review: all files from Tasks 1–8
+
+- [ ] Compare every in-scope REST operation and Legacy DNS method with API coverage and the command tree.
+- [ ] Review secret handling, session cleanup, backend eligibility, FQDN/IP validation, mutation confirmations, and documentation.
+- [ ] Inspect the final diff for SCP regressions and ensure no reseller actions were added.
+- [ ] Leave the checkout clean; do not run tests or call Netcup.
